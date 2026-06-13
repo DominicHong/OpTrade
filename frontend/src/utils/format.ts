@@ -1,0 +1,54 @@
+/** Format a number to fixed decimal places, returning '--' for null/undefined. */
+export function formatNumber(value: number | null | undefined, decimals: number = 2): string {
+  if (value === null || value === undefined) return '--'
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+/** Format a notional / large number with thousands separators. */
+export function formatNotional(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '--'
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+/** Format a percentage value (e.g. 0.014 -> '1.40%'). */
+export function formatPercent(value: number | null | undefined, decimals: number = 2): string {
+  if (value === null || value === undefined) return '--'
+  return (value * 100).toFixed(decimals) + '%'
+}
+
+/** Format a Greek value with sign and appropriate decimal places. */
+export function formatGreek(value: number | null | undefined, isPercent: boolean = false): string {
+  if (value === null || value === undefined) return '--'
+  if (isPercent) {
+    return (value > 0 ? '+' : '') + (value * 100).toFixed(4) + '%'
+  }
+  return (value > 0 ? '+' : '') + value.toFixed(4)
+}
+
+/** Convert a value to 万 (divide by 10000), returning null for null/undefined. */
+export function toWan(value: number | null | undefined): number | null | undefined {
+  if (value === null || value === undefined) return value
+  return value / 10000
+}
+
+/** Format a date string for display. */
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return '--'
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return value
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+/** Get CSS class for positive/negative/zero Greek values. */
+export function greekColorClass(value: number | null | undefined): string {
+  if (value === null || value === undefined) return ''
+  if (value > 0) return 'text-positive'
+  if (value < 0) return 'text-negative'
+  return ''
+}

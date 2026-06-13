@@ -1,0 +1,804 @@
+<script setup lang="ts">
+import { onMounted, ref, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTradeStore } from '@/stores/tradeStore'
+import { useUiStore } from '@/stores/uiStore'
+import { uploadFile, getColumnMapping } from '@/api/imports'
+import DataTable from '@/components/shared/DataTable.vue'
+import SearchInput from '@/components/shared/SearchInput.vue'
+import NumberDisplay from '@/components/shared/NumberDisplay.vue'
+import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
+import type { TableColumn } from '@/components/shared/DataTable.vue'
+import type { Trade, TradeCreate, TradeUpdate } from '@/types/trade'
+import type { ImportConfirmResponse } from '@/types/api'
+import { formatDate, toWan } from '@/utils/format'
+
+const router = useRouter()
+const store = useTradeStore()
+const ui = useUiStore()
+const search = ref('')
+
+// --- Tab state ---
+const activeTab = ref<'list' | 'import' | 'mapping'>('list')
+
+// --- Import state ---
+const importFile = ref<File | null>(null)
+const importLoading = ref(false)
+const importResult = ref<ImportConfirmResponse | null>(null)
+const columnMapping = ref<Record<string, string>>({})
+
+// --- Trade form modal ---
+const showModal = ref(false)
+const modalMode = ref<'create' | 'edit'>('create')
+const formError = ref<string | null>(null)
+const formLoading = ref(false)
+
+const emptyForm: TradeCreate = {
+  trade_id: '',
+  ccy_pair: 'USD/CNY',
+  trade_type: 'CALL',
+  direction: 'Buy',
+  strike: null,
+  notional1: null,
+  expiry_date: null,
+  counterparty_name: null,
+  portfolio_name: null,
+  option_type: null,
+}
+
+const form = ref<TradeCreate | TradeUpdate>({ ...emptyForm })
+const editingTradeId = ref<number | null>(null)
+
+// --- Delete confirmation ---
+const deleteConfirmId = ref<number | null>(null)
+
+const columns: TableColumn[] = [
+  { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
+  { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
+  { key: 'trade_type', label: '类型', sortable: true, width: '60px' },
+  { key: 'direction', label: '方向', sortable: true, width: '60px' },
+  { key: 'strike', label: '执行价', sortable: true, width: '90px', align: 'right' },
+  { key: 'notional1', label: '名义本金(万)', sortable: true, width: '120px', align: 'right' },
+  { key: 'expiry_date', label: '到期日', sortable: true, width: '100px' },
+  { key: 'counterparty_name', label: '对手方', width: '120px' },
+  { key: 'exercise_status', label: '行权状态', width: '80px' },
+  { key: 'delivery_status', label: '交割状态', width: '80px' },
+  { key: 'actions', label: '操作', width: '100px' },
+]
+
+onMounted(() => {
+  store.loadTrades()
+  loadColumnMapping()
+})
+
+watch(search, (val) => {
+  store.setFilters({ search: val })
+})
+
+function onSort(col: string) {
+  const order = store.filters.sort_by === col && store.filters.sort_order === 'asc' ? 'desc' : 'asc'
+  store.setFilters({ sort_by: col, sort_order: order })
+}
+
+function onRowClick(row: Record<string, unknown>) {
+  const trade = row as unknown as Trade
+  router.push(`/trades/${trade.id}`)
+}
+
+// --- Import ---
+function onFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.files?.length) {
+    importFile.value = input.files[0]
+  }
+}
+
+async function handleUpload() {
+  if (!importFile.value) return
+  importLoading.value = true
+  try {
+    const result = await uploadFile(importFile.value)
+    importResult.value = result
+    const msg = `导入完成: ${result.imported_rows} 行成功, ${result.skipped_rows} 跳过, ${result.error_rows} 错误`
+    ui.addNotification(result.status === 'success' ? 'success' : 'warning', msg)
+    store.loadTrades()
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '导入失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
+async function loadColumnMapping() {
+  try {
+    const result = await getColumnMapping()
+    columnMapping.value = result.mapping
+  } catch { /* ignore */ }
+}
+
+// --- Create / Edit ---
+function openCreateModal() {
+  modalMode.value = 'create'
+  form.value = { ...emptyForm }
+  editingTradeId.value = null
+  formError.value = null
+  showModal.value = true
+}
+
+function openEditModal(trade: Trade) {
+  modalMode.value = 'edit'
+  editingTradeId.value = trade.id
+  form.value = {
+    trade_id: trade.trade_id,
+    ccy_pair: trade.ccy_pair,
+    trade_type: trade.trade_type,
+    direction: trade.direction,
+    strike: trade.strike,
+    notional1: trade.notional1,
+    expiry_date: trade.expiry_date,
+    counterparty_name: trade.counterparty_name,
+    portfolio_name: trade.portfolio_name,
+    option_type: trade.option_type,
+    source_trade_id: trade.source_trade_id,
+    spot_rate: trade.spot_rate,
+    volatility: trade.volatility,
+    exercise_status: trade.exercise_status,
+    delivery_status: trade.delivery_status,
+    comments: trade.comments,
+  }
+  formError.value = null
+  showModal.value = true
+}
+
+async function submitForm() {
+  formLoading.value = true
+  formError.value = null
+  try {
+    if (modalMode.value === 'create') {
+      await store.addTrade(form.value as TradeCreate)
+      ui.addNotification('success', '交易创建成功')
+    } else if (editingTradeId.value) {
+      await store.saveTrade(editingTradeId.value, form.value as TradeUpdate)
+      ui.addNotification('success', '交易更新成功')
+    }
+    showModal.value = false
+    store.loadTrades()
+  } catch (e: unknown) {
+    formError.value = e instanceof Error ? e.message : '操作失败'
+  } finally {
+    formLoading.value = false
+  }
+}
+
+// --- Delete ---
+function confirmDelete(id: number) {
+  deleteConfirmId.value = id
+}
+
+async function doDelete() {
+  if (!deleteConfirmId.value) return
+  try {
+    await store.removeTrade(deleteConfirmId.value)
+    ui.addNotification('success', '交易已删除')
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+  } finally {
+    deleteConfirmId.value = null
+  }
+}
+
+function cancelDelete() {
+  deleteConfirmId.value = null
+}
+
+// Pagination
+const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size || 50))
+</script>
+
+<template>
+  <div class="trade-list-page">
+    <div class="page-header">
+      <h1>交易管理</h1>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button :class="['tab', { active: activeTab === 'list' }]" @click="activeTab = 'list'">交易列表</button>
+      <button :class="['tab', { active: activeTab === 'import' }]" @click="activeTab = 'import'">数据导入</button>
+      <button :class="['tab', { active: activeTab === 'mapping' }]" @click="activeTab = 'mapping'">字段映射参考</button>
+    </div>
+
+    <!-- ==================== Tab: Trade List ==================== -->
+    <template v-if="activeTab === 'list'">
+      <div class="toolbar">
+        <SearchInput v-model="search" placeholder="搜索成交编号、货币对、对手方..." />
+        <div class="filter-group">
+          <select v-model="store.filters.ccy_pair" @change="store.setFilters({ ccy_pair: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">全部货币对</option>
+            <option value="USD/CNY">USD/CNY</option>
+            <option value="EUR/USD">EUR/USD</option>
+          </select>
+          <select v-model="store.filters.trade_type" @change="store.setFilters({ trade_type: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">全部类型</option>
+            <option value="CALL">Call</option>
+            <option value="PUT">Put</option>
+          </select>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button class="btn-primary" @click="openCreateModal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建交易
+        </button>
+      </div>
+
+      <DataTable
+        :columns="columns"
+        :rows="store.trades as unknown as Record<string, unknown>[]"
+        :loading="store.loading"
+        :sort-by="store.filters.sort_by"
+        :sort-order="store.filters.sort_order"
+        @sort="onSort"
+        @row-click="onRowClick"
+      >
+        <template #cell-notional1="{ row }">
+          <NumberDisplay :value="toWan(row.notional1 as number)" />
+        </template>
+        <template #cell-strike="{ row }">
+          <NumberDisplay :value="row.strike as number" :decimals="4" />
+        </template>
+        <template #cell-expiry_date="{ row }">
+          {{ formatDate(row.expiry_date as string) }}
+        </template>
+        <template #cell-trade_type="{ row }">
+          <span :class="row.trade_type === 'CALL' ? 'badge-call' : 'badge-put'">
+            {{ row.trade_type }}
+          </span>
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="action-btns" @click.stop>
+            <button class="action-btn action-edit" title="编辑" @click="openEditModal(row as unknown as Trade)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="action-btn action-delete" title="删除" @click="confirmDelete((row as unknown as Trade).id)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+          </div>
+        </template>
+      </DataTable>
+
+      <!-- Pagination -->
+      <div class="pagination" v-if="store.totalCount > 0">
+        <button class="page-btn" :disabled="store.filters.page === 1" @click="store.setPage((store.filters.page || 1) - 1)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          上一页
+        </button>
+        <span class="page-info">第 <strong>{{ store.filters.page }}</strong> / {{ totalPages() }} 页 <span class="page-total">(共 {{ store.totalCount }} 条)</span></span>
+        <button class="page-btn" :disabled="(store.filters.page || 1) >= totalPages()" @click="store.setPage((store.filters.page || 1) + 1)">
+          下一页
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </template>
+
+    <!-- ==================== Tab: Import ==================== -->
+    <template v-if="activeTab === 'import'">
+      <div class="card upload-area">
+        <h3>选择文件</h3>
+        <p class="card-subtitle">导入 COMSTAR 外汇期权 Excel/CSV 交易流水文件</p>
+        <div class="file-input-row">
+          <div class="file-input-wrapper">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            <span class="file-text">{{ importFile ? importFile.name : '点击选择文件...' }}</span>
+            <input type="file" accept=".csv,.xlsx,.xls" @change="onFileChange" class="file-hidden" />
+          </div>
+          <button :disabled="!importFile || importLoading" @click="handleUpload" class="btn-primary">
+            {{ importLoading ? '上传中...' : '上传并解析' }}
+          </button>
+        </div>
+        <p v-if="importFile" class="file-info">{{ importFile.name }} ({{ (importFile.size / 1024).toFixed(1) }} KB)</p>
+      </div>
+
+      <div v-if="importLoading"><LoadingSpinner message="正在解析文件..." /></div>
+
+      <div v-if="importResult" class="card">
+        <h3>导入结果</h3>
+        <div class="preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-value">{{ importResult.total_rows }}</span>
+            <span class="preview-stat-label">总行数</span>
+          </div>
+          <div class="preview-stat preview-stat--success">
+            <span class="preview-stat-value">{{ importResult.imported_rows }}</span>
+            <span class="preview-stat-label">成功导入</span>
+          </div>
+          <div class="preview-stat preview-stat--warning">
+            <span class="preview-stat-value">{{ importResult.skipped_rows }}</span>
+            <span class="preview-stat-label">跳过</span>
+          </div>
+          <div class="preview-stat preview-stat--error">
+            <span class="preview-stat-value">{{ importResult.error_rows }}</span>
+            <span class="preview-stat-label">错误</span>
+          </div>
+        </div>
+        <div v-if="importResult.errors.length" class="error-list">
+          <h4>错误详情 (前50条):</h4>
+          <div v-for="(err, i) in importResult.errors" :key="i" class="error-item">
+            <span class="err-row">行 {{ (err as Record<string, unknown>).row_number }}</span>
+            <span class="err-field">{{ (err as Record<string, unknown>).field }}</span>
+            <span class="err-msg">{{ (err as Record<string, unknown>).message }}</span>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ==================== Tab: Column Mapping ==================== -->
+    <template v-if="activeTab === 'mapping'">
+      <div class="card" v-if="Object.keys(columnMapping).length">
+        <h3>字段映射参考</h3>
+        <p class="card-subtitle">CSV 表头 → 数据库字段</p>
+        <div class="mapping-grid">
+          <div v-for="(field, header) in columnMapping" :key="header" class="mapping-item">
+            <span class="csv-header">{{ header }}</span>
+            <span class="arrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+            <span class="db-field">{{ field }}</span>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ==================== Trade Form Modal ==================== -->
+    <Teleport to="body">
+      <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>{{ modalMode === 'create' ? '新建交易' : '编辑交易' }}</h3>
+            <button class="modal-close" @click="showModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="formError" class="form-error">{{ formError }}</div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label>成交编号 <span class="required">*</span></label>
+                <input v-model="form.trade_id" :disabled="modalMode === 'edit'" placeholder="必填" />
+              </div>
+              <div class="form-field">
+                <label>货币对</label>
+                <select v-model="form.ccy_pair">
+                  <option value="USD/CNY">USD/CNY</option>
+                  <option value="EUR/USD">EUR/USD</option>
+                  <option value="EUR/CNY">EUR/CNY</option>
+                  <option value="GBP/USD">GBP/USD</option>
+                  <option value="USD/JPY">USD/JPY</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>交易类型</label>
+                <select v-model="form.trade_type">
+                  <option value="CALL">CALL</option>
+                  <option value="PUT">PUT</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>方向</label>
+                <select v-model="form.direction">
+                  <option value="Buy">Buy</option>
+                  <option value="Sell">Sell</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>执行价</label>
+                <input v-model.number="form.strike" type="number" step="0.0001" placeholder="如 7.0000" />
+              </div>
+              <div class="form-field">
+                <label>名义本金</label>
+                <input v-model.number="form.notional1" type="number" step="10000" placeholder="如 1000000" />
+              </div>
+              <div class="form-field">
+                <label>到期日</label>
+                <input v-model="form.expiry_date" type="date" />
+              </div>
+              <div class="form-field">
+                <label>对手方</label>
+                <input v-model="form.counterparty_name" placeholder="对手方名称" />
+              </div>
+              <div class="form-field">
+                <label>投组</label>
+                <input v-model="form.portfolio_name" placeholder="投资组合名称" />
+              </div>
+              <div class="form-field">
+                <label>即期汇率</label>
+                <input v-model.number="form.spot_rate" type="number" step="0.0001" placeholder="如 6.8500" />
+              </div>
+              <div class="form-field">
+                <label>波动率</label>
+                <input v-model.number="form.volatility" type="number" step="0.001" placeholder="如 0.05" />
+              </div>
+              <div class="form-field">
+                <label>行权状态</label>
+                <select v-model="form.exercise_status">
+                  <option :value="null">--</option>
+                  <option value="未到期">未到期</option>
+                  <option value="已行权">已行权</option>
+                  <option value="未行权">未行权</option>
+                  <option value="过期未行权">过期未行权</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>交割状态</label>
+                <select v-model="form.delivery_status">
+                  <option :value="null">--</option>
+                  <option value="未交割">未交割</option>
+                  <option value="已交割">已交割</option>
+                </select>
+              </div>
+              <div class="form-field form-field--full">
+                <label>备注</label>
+                <input v-model="form.comments" placeholder="备注信息" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="showModal = false">取消</button>
+            <button class="btn-primary" :disabled="formLoading" @click="submitForm">
+              {{ formLoading ? '提交中...' : '确认' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ==================== Delete Confirmation ==================== -->
+    <Teleport to="body">
+      <div v-if="deleteConfirmId !== null" class="modal-overlay" @click.self="cancelDelete">
+        <div class="modal modal-sm">
+          <div class="modal-header">
+            <h3>确认删除</h3>
+            <button class="modal-close" @click="cancelDelete">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>确定要删除该交易吗？此操作不可撤销。</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="cancelDelete">取消</button>
+            <button class="btn-danger" @click="doDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+.page-header { margin-bottom: 1.25rem; }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.25rem;
+  border-bottom: 2px solid var(--color-border);
+}
+.tab {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.tab:hover { color: var(--color-text); }
+.tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Toolbar */
+.toolbar { display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: center; }
+.toolbar-spacer { flex: 1; }
+.filter-group { display: flex; gap: 0.5rem; }
+.filter-group select {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+.filter-group select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+/* Buttons */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-secondary {
+  padding: 0.5rem 1rem;
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-secondary:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.btn-danger {
+  padding: 0.5rem 1rem;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-danger:hover { filter: brightness(1.1); }
+
+/* Badges */
+.badge-call {
+  background: var(--color-positive-bg);
+  color: var(--color-positive);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-put {
+  background: var(--color-negative-bg);
+  color: var(--color-negative);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Action buttons */
+.action-btns { display: flex; gap: 0.35rem; }
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-surface);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.action-btn:hover { box-shadow: var(--shadow-sm); }
+.action-edit:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.action-delete:hover { border-color: #ef4444; color: #ef4444; }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+}
+.page-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-surface);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+.page-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+.page-btn:disabled { opacity: 0.4; cursor: default; }
+.page-info { color: var(--color-text-secondary); }
+.page-info strong { color: var(--color-primary); }
+.page-total { color: var(--color-text-secondary); }
+
+/* Card */
+.card {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+.card h3 { font-size: 0.9375rem; margin-bottom: 0.85rem; }
+.card-subtitle { font-size: 0.75rem; color: var(--color-text-secondary); margin-top: -0.5rem; margin-bottom: 0.75rem; }
+
+/* Import */
+.file-input-row { display: flex; gap: 1rem; align-items: center; }
+.file-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  color: var(--color-text-secondary);
+}
+.file-input-wrapper:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+.file-hidden {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.file-text { font-size: 0.875rem; }
+.file-info { margin-top: 0.5rem; font-size: 0.8125rem; color: var(--color-primary); font-weight: 500; }
+.preview-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 0.85rem;
+}
+.preview-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius);
+  background: var(--color-bg-secondary);
+}
+.preview-stat-value { font-size: 1.25rem; font-weight: 700; }
+.preview-stat-label { font-size: 0.7rem; color: var(--color-text-secondary); margin-top: 0.15rem; }
+.preview-stat--success { background: var(--color-positive-bg); }
+.preview-stat--success .preview-stat-value { color: var(--color-positive); }
+.preview-stat--warning { background: var(--color-warning-bg); }
+.preview-stat--warning .preview-stat-value { color: var(--color-warning); }
+.preview-stat--error { background: var(--color-negative-bg); }
+.preview-stat--error .preview-stat-value { color: var(--color-negative); }
+.error-list { margin-top: 0.85rem; font-size: 0.8125rem; }
+.error-list h4 { margin-bottom: 0.5rem; color: var(--color-text-secondary); font-size: 0.8125rem; }
+.error-item { display: flex; gap: 0.75rem; padding: 0.25rem 0; }
+.err-row { color: var(--color-text-secondary); min-width: 2.5rem; }
+.err-field { font-family: "SF Mono", "Cascadia Code", "Consolas", monospace; color: var(--color-primary); min-width: 8rem; font-size: 0.75rem; }
+.err-msg { color: var(--color-negative); }
+
+/* Mapping */
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.4rem;
+  font-size: 0.75rem;
+}
+.mapping-item { display: flex; gap: 0.35rem; align-items: center; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); transition: background var(--transition-fast); }
+.mapping-item:hover { background: var(--color-bg-secondary); }
+.csv-header { color: var(--color-text-secondary); }
+.arrow { color: var(--color-primary); display: flex; align-items: center; }
+.db-field { font-family: "SF Mono", "Cascadia Code", "Consolas", monospace; color: var(--color-text); }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  width: 640px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+.modal-sm { width: 400px; }
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.modal-header h3 { font-size: 0.9375rem; margin: 0; }
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--color-text); }
+.modal-body { padding: 1.25rem; }
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Form */
+.form-error {
+  background: var(--color-negative-bg);
+  color: var(--color-negative);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  margin-bottom: 1rem;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+.form-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.form-field--full { grid-column: 1 / -1; }
+.form-field label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.form-field .required { color: #ef4444; }
+.form-field input,
+.form-field select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: border-color var(--transition-fast);
+}
+.form-field input:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-bg);
+}
+.form-field input:disabled {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+}
+</style>
