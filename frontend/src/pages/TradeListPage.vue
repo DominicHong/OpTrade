@@ -12,6 +12,7 @@ import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { Trade, TradeCreate, TradeUpdate } from '@/types/trade'
 import type { ImportConfirmResponse } from '@/types/api'
 import { formatDate, toWan } from '@/utils/format'
+import { useModalGuard } from '@/composables/useModalGuard'
 
 const router = useRouter()
 const store = useTradeStore()
@@ -37,7 +38,7 @@ const emptyForm: TradeCreate = {
   trade_id: '',
   ccy_pair: 'USD/CNY',
   trade_type: 'CALL',
-  direction: 'Buy',
+  direction: '买入',
   strike: null,
   notional1: null,
   expiry_date: null,
@@ -141,7 +142,7 @@ function openEditModal(trade: Trade) {
     option_type: trade.option_type,
     source_trade_id: trade.source_trade_id,
     spot_rate: trade.spot_rate,
-    volatility: trade.volatility,
+    volatility: trade.volatility != null ? trade.volatility * 100 : null,
     exercise_status: trade.exercise_status,
     delivery_status: trade.delivery_status,
     comments: trade.comments,
@@ -153,12 +154,16 @@ function openEditModal(trade: Trade) {
 async function submitForm() {
   formLoading.value = true
   formError.value = null
+  const payload = { ...form.value }
+  if (payload.volatility != null) {
+    payload.volatility = payload.volatility / 100
+  }
   try {
     if (modalMode.value === 'create') {
-      await store.addTrade(form.value as TradeCreate)
+      await store.addTrade(payload as TradeCreate)
       ui.addNotification('success', '交易创建成功')
     } else if (editingTradeId.value) {
-      await store.saveTrade(editingTradeId.value, form.value as TradeUpdate)
+      await store.saveTrade(editingTradeId.value, payload as TradeUpdate)
       ui.addNotification('success', '交易更新成功')
     }
     showModal.value = false
@@ -190,6 +195,9 @@ async function doDelete() {
 function cancelDelete() {
   deleteConfirmId.value = null
 }
+
+// --- Modal overlay click guard (prevents closing on drag from inside) ---
+const { onOverlayMousedown, onOverlayClick } = useModalGuard(showModal)
 
 // Pagination
 const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size || 50))
@@ -350,7 +358,7 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
 
     <!-- ==================== Trade Form Modal ==================== -->
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+      <div v-if="showModal" class="modal-overlay" @mousedown="onOverlayMousedown" @click="onOverlayClick">
         <div class="modal">
           <div class="modal-header">
             <h3>{{ modalMode === 'create' ? '新建交易' : '编辑交易' }}</h3>
@@ -383,8 +391,8 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
               <div class="form-field">
                 <label>方向</label>
                 <select v-model="form.direction">
-                  <option value="Buy">Buy</option>
-                  <option value="Sell">Sell</option>
+                  <option value="买入">买入</option>
+                  <option value="卖出">卖出</option>
                 </select>
               </div>
               <div class="form-field">
@@ -412,8 +420,8 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
                 <input v-model.number="form.spot_rate" type="number" step="0.0001" placeholder="如 6.8500" />
               </div>
               <div class="form-field">
-                <label>波动率</label>
-                <input v-model.number="form.volatility" type="number" step="0.001" placeholder="如 0.05" />
+                <label>波动率 (%)</label>
+                <input v-model.number="form.volatility" type="number" step="0.1" placeholder="如 5" />
               </div>
               <div class="form-field">
                 <label>行权状态</label>

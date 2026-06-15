@@ -36,7 +36,7 @@ async function calculateGreeks() {
   try {
     greeksResult.value = await fetchPortfolioGreeks(pfStore.currentPortfolio.id, {
       risk_free_rate: riskFreeRate.value / 100,
-      volatility: volatility.value,
+      volatility: volatility.value != null ? volatility.value / 100 : null,
       spot: spot.value,
       valuation_date: valuationDate.value,
     })
@@ -97,8 +97,8 @@ function fmt(val: number | null | undefined, decimals = 4): string {
             <input id="risk-free-rate" type="number" step="0.1" v-model.number="riskFreeRate" placeholder="3" />
           </div>
           <div class="param-field">
-            <label for="volatility">波动率</label>
-            <input id="volatility" type="number" step="0.001" v-model.number="volatility" placeholder="留空则使用交易自带波动率" />
+            <label for="volatility">波动率 (%)</label>
+            <input id="volatility" type="number" step="0.1" v-model.number="volatility" placeholder="如 1，留空则使用交易自带波动率" />
           </div>
           <div class="param-field">
             <label for="spot">即期汇率</label>
@@ -128,7 +128,7 @@ function fmt(val: number | null | undefined, decimals = 4): string {
           </div>
         </div>
         <div class="params-used">
-          <span>参数: r = {{ (greeksResult.risk_free_rate * 100).toFixed(2) }}%, vol = {{ greeksResult.volatility_used ?? '交易自带' }}, spot = {{ greeksResult.spot_used ?? '交易自带' }}</span>
+          <span>参数: r = {{ (greeksResult.risk_free_rate * 100).toFixed(2) }}%, vol = {{ greeksResult.volatility_used != null ? (greeksResult.volatility_used * 100).toFixed(2) + '%' : '交易自带' }}, spot = {{ greeksResult.spot_used ?? '交易自带' }}</span>
         </div>
       </div>
 

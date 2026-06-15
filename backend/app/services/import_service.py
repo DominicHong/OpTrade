@@ -87,6 +87,9 @@ class ImportService:
                     parsed_value = parse_chinese_datetime(raw_value)
                 elif field_name in FLOAT_FIELDS:
                     parsed_value = parse_float(raw_value)
+                    # COMSTAR exports volatility in annualized percent (e.g. 1.43 = 1.43%)
+                    if field_name == "volatility" and parsed_value is not None:
+                        parsed_value = parsed_value / 100.0
                 elif field_name in BOOL_FIELDS:
                     parsed_value = parse_bool_chinese(raw_value)
                     if parsed_value is None:

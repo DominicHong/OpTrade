@@ -11,8 +11,8 @@ const spotShifts = ref<number[]>(DEFAULT_SPOT_SHIFTS)
 const volShifts = ref<number[]>(DEFAULT_VOL_SHIFTS)
 const timeHorizons = ref<number[]>(DEFAULT_TIME_HORIZONS)
 const baseSpot = ref<number>(6.79)
-const baseVol = ref<number>(0.014)
-const riskFreeRate = ref<number>(0.03)
+const baseVol = ref<number>(1.4)
+const riskFreeRate = ref<number>(3)
 const valuationDate = ref(new Date().toISOString().slice(0, 10))
 
 async function runHeatmap() {
@@ -22,8 +22,8 @@ async function runHeatmap() {
     spot_shifts: spotShifts.value,
     vol_shifts: volShifts.value,
     base_spot: baseSpot.value,
-    base_vol: baseVol.value,
-    risk_free_rate: riskFreeRate.value,
+    base_vol: baseVol.value / 100,
+    risk_free_rate: riskFreeRate.value / 100,
     valuation_date: valuationDate.value,
   })
 }
@@ -49,12 +49,12 @@ async function runHeatmap() {
           <input type="number" v-model.number="baseSpot" step="0.01" />
         </div>
         <div class="param">
-          <label>波动率 (Vol)</label>
-          <input type="number" v-model.number="baseVol" step="0.001" />
+          <label>波动率 (Vol) (%)</label>
+          <input type="number" v-model.number="baseVol" step="0.1" />
         </div>
         <div class="param">
-          <label>无风险利率</label>
-          <input type="number" v-model.number="riskFreeRate" step="0.001" />
+          <label>无风险利率 (%)</label>
+          <input type="number" v-model.number="riskFreeRate" step="0.1" />
         </div>
         <div class="param">
           <label>标的偏移 (bps)</label>
