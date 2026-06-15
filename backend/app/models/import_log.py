@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel
 
@@ -19,7 +19,7 @@ class ImportLog(SQLModel, table=True):
     error_message: str | None = Field(default=None)
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ImportErrorRecord(SQLModel, table=True):
@@ -32,4 +32,4 @@ class ImportErrorRecord(SQLModel, table=True):
     error_type: str = Field(max_length=50)  # validation/duplicate/parse/missing_field
     error_message: str = Field()
     raw_data: str | None = Field(default=None)  # JSON string of the row
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

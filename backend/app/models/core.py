@@ -5,7 +5,7 @@ Consolidated into one file to avoid circular imports, since these models
 cross-reference each other via SQLAlchemy relationships.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -173,8 +173,8 @@ class Trade(SQLModel, table=True):
 
     # === Timestamps ===
     created_timestamp: datetime | None = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CalculationResult(SQLModel, table=True):
@@ -197,6 +197,6 @@ class CalculationResult(SQLModel, table=True):
     rho: float | None = Field(default=None)
 
     scenario_label: str | None = Field(default=None, max_length=100, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     trade: Trade = Relationship(back_populates="calculation_results")

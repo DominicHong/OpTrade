@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlmodel import Field, SQLModel
 
@@ -16,4 +16,4 @@ class MarketDataSnapshot(SQLModel, table=True):
     risk_free_rate_foreign: float | None = Field(default=None)
     snapshot_date: date = Field(default_factory=date.today, index=True)
     source: str | None = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
