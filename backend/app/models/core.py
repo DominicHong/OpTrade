@@ -186,7 +186,8 @@ class CalculationResult(SQLModel, table=True):
     calculation_date: date = Field(default_factory=date.today)
     spot: float | None = Field(default=None)
     volatility: float | None = Field(default=None)
-    risk_free_rate: float | None = Field(default=None)
+    rf_rate_base: float | None = Field(default=None)
+    rf_rate_quote: float | None = Field(default=None)
     time_to_expiry_years: float | None = Field(default=None)
 
     npv: float | None = Field(default=None)

@@ -16,7 +16,7 @@ class TestSpotShift:
         results = svc.spot_shift(
             option_type="Call", direction="Buy",
             base_spot=6.80, strike=6.80, base_vol=0.10,
-            time_to_expiry_years=1.0, risk_free_rate=0.03,
+            time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
             shifts_bps=[-500, 0, 500],
         )
         assert results[0]["shift_bps"] == -500
@@ -28,7 +28,7 @@ class TestSpotShift:
         results = svc.spot_shift(
             option_type="Call", direction="Buy",
             base_spot=6.80, strike=6.80, base_vol=0.10,
-            time_to_expiry_years=1.0, risk_free_rate=0.03,
+            time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
         )
         assert len(results) == 7  # default shifts
 
@@ -39,7 +39,7 @@ class TestVolShift:
         results = svc.vol_shift(
             option_type="Call", direction="Buy",
             spot=6.80, strike=6.80, base_vol=0.10,
-            time_to_expiry_years=1.0, risk_free_rate=0.03,
+            time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
             shifts_vol=[-0.03, 0, 0.03],
         )
         assert results[2]["npv"] > results[1]["npv"] > results[0]["npv"]
@@ -49,7 +49,7 @@ class TestVolShift:
         results = svc.vol_shift(
             option_type="Call", direction="Buy",
             spot=6.80, strike=6.80, base_vol=0.01,
-            time_to_expiry_years=1.0, risk_free_rate=0.03,
+            time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
             shifts_vol=[-0.02],
         )
         assert results[0]["error"] is None  # should not crash
@@ -61,7 +61,7 @@ class TestTimeDecay:
         results = svc.time_decay(
             option_type="Call", direction="Buy",
             spot=6.80, strike=6.80, volatility=0.10,
-            time_to_expiry_years=1.0, risk_free_rate=0.03,
+            time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
         )
         # At t=0, the option has more value than at later dates
         assert results[0]["days_forward"] == 0
@@ -74,7 +74,7 @@ class TestHeatmap:
         result = svc.heatmap(
             option_type="Call", direction="Buy",
             base_spot=6.80, strike=6.80, base_vol=0.10,
-            time_to_expiry_years=1.0, risk_free_rate=0.03,
+            time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
         )
         assert "spot_shifts" in result
         assert "vol_shifts" in result

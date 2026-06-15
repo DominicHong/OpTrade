@@ -44,7 +44,8 @@ def calculate_greeks(
         # Determine inputs
         spot = request.spot or trade.spot_rate or 6.8
         vol = request.volatility or trade.volatility or 0.05
-        rate = request.risk_free_rate or 0.03
+        rf_rate_base = request.rf_rate_base or 0.03
+        rf_rate_quote = request.rf_rate_quote or 0.03
 
         days_to_expiry = (trade.expiry_date - date.today()).days
         tte = max(days_to_expiry / 365.0, 0.001)
@@ -56,7 +57,8 @@ def calculate_greeks(
             strike=float(trade.strike),
             volatility=vol,
             time_to_expiry_years=tte,
-            risk_free_rate_domestic=rate,
+            rf_rate_base=rf_rate_base,
+            rf_rate_quote=rf_rate_quote,
         )
 
         # Persist to cache
@@ -65,7 +67,8 @@ def calculate_greeks(
             calculation_date=date.today(),
             spot=spot,
             volatility=vol,
-            risk_free_rate=rate,
+            rf_rate_base=rf_rate_base,
+            rf_rate_quote=rf_rate_quote,
             time_to_expiry_years=tte,
             npv=greeks.get("npv"),
             delta=greeks.get("delta"),
@@ -88,7 +91,8 @@ def calculate_greeks(
             rho=greeks.get("rho"),
             spot=spot,
             volatility=vol,
-            risk_free_rate=rate,
+            rf_rate_base=rf_rate_base,
+            rf_rate_quote=rf_rate_quote,
             time_to_expiry_years=tte,
             scenario_label=request.scenario_label,
             error=greeks.get("error"),
@@ -108,7 +112,8 @@ def price_option(request: PricingRequest) -> PricingResult:
         strike=request.strike,
         volatility=request.volatility,
         time_to_expiry_years=request.time_to_expiry_years,
-        risk_free_rate_domestic=request.risk_free_rate,
+        rf_rate_base=request.rf_rate_base,
+        rf_rate_quote=request.rf_rate_quote,
         notional=request.notional,
     )
     return PricingResult(

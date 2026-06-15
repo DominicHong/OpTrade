@@ -20,8 +20,8 @@ class PricingService:
         strike: float,
         volatility: float,
         time_to_expiry_years: float,
-        risk_free_rate_domestic: float = 0.03,
-        risk_free_rate_foreign: float = 0.03,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
         notional: float = 1.0,
     ) -> dict:
         """
@@ -45,15 +45,15 @@ class PricingService:
             vol_handle = ql.BlackVolTermStructureHandle(
                 ql.BlackConstantVol(today, ql.TARGET(), volatility, ql.Actual365Fixed())
             )
-            r_dom_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, risk_free_rate_domestic, ql.Actual365Fixed())
+            r_base_handle = ql.YieldTermStructureHandle(
+                ql.FlatForward(today, rf_rate_base, ql.Actual365Fixed())
             )
-            r_for_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, risk_free_rate_foreign, ql.Actual365Fixed())
+            r_quote_handle = ql.YieldTermStructureHandle(
+                ql.FlatForward(today, rf_rate_quote, ql.Actual365Fixed())
             )
 
             bsm_process = ql.BlackScholesMertonProcess(
-                spot_handle, r_for_handle, r_dom_handle, vol_handle
+                spot_handle, r_base_handle, r_quote_handle, vol_handle
             )
 
             option = ql.VanillaOption(payoff, exercise)

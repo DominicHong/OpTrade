@@ -160,7 +160,8 @@ def calculate_portfolio_greeks(
             portfolio_id=portfolio_id,
             portfolio_name=portfolio.name,
             trade_count=0,
-            risk_free_rate=request.risk_free_rate,
+            rf_rate_base=request.rf_rate_base,
+            rf_rate_quote=request.rf_rate_quote,
         )
 
     valuation_date = request.valuation_date or date.today()
@@ -187,7 +188,6 @@ def calculate_portfolio_greeks(
 
         spot = request.spot or trade.spot_rate or 6.8
         vol = request.volatility or trade.volatility or 0.05
-        rate = request.risk_free_rate
 
         days_to_expiry = (trade.expiry_date - valuation_date).days
         tte = max(days_to_expiry / 365.0, 0.001)
@@ -199,7 +199,8 @@ def calculate_portfolio_greeks(
             strike=float(trade.strike),
             volatility=vol,
             time_to_expiry_years=tte,
-            risk_free_rate_domestic=rate,
+            rf_rate_base=request.rf_rate_base,
+            rf_rate_quote=request.rf_rate_quote,
         )
 
         if greeks.get("error"):
@@ -249,7 +250,8 @@ def calculate_portfolio_greeks(
         total_delta=round(total_delta, 6),
         total_gamma=round(total_gamma, 6),
         total_npv=round(total_npv, 6),
-        risk_free_rate=request.risk_free_rate,
+        rf_rate_base=request.rf_rate_base,
+        rf_rate_quote=request.rf_rate_quote,
         volatility_used=request.volatility,
         spot_used=request.spot,
         trades=trade_details,

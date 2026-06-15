@@ -10,7 +10,7 @@ export const useCalculationStore = defineStore('calculation', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  async function calculateGreeks(tradeIds: number[], spot?: number, vol?: number, rate?: number) {
+  async function calculateGreeks(tradeIds: number[], spot?: number, vol?: number, rfRateBase?: number, rfRateQuote?: number) {
     loading.value = true
     error.value = null
     try {
@@ -18,7 +18,8 @@ export const useCalculationStore = defineStore('calculation', () => {
         trade_ids: tradeIds,
         spot,
         volatility: vol,
-        risk_free_rate: rate,
+        rf_rate_base: rfRateBase,
+        rf_rate_quote: rfRateQuote,
       })
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Greeks calculation failed'

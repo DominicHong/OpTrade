@@ -27,7 +27,8 @@ class ScenarioService:
         strike: float,
         base_vol: float,
         time_to_expiry_years: float,
-        risk_free_rate: float,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
         shifts_bps: list[float] | None = None,
     ) -> list[dict]:
         """
@@ -50,7 +51,8 @@ class ScenarioService:
                 strike=strike,
                 volatility=base_vol,
                 time_to_expiry_years=time_to_expiry_years,
-                risk_free_rate_domestic=risk_free_rate,
+                rf_rate_base=rf_rate_base,
+                rf_rate_quote=rf_rate_quote,
             )
             results.append({
                 "shift_bps": shift_bp,
@@ -68,7 +70,8 @@ class ScenarioService:
         strike: float,
         base_vol: float,
         time_to_expiry_years: float,
-        risk_free_rate: float,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
         shifts_vol: list[float] | None = None,
     ) -> list[dict]:
         """
@@ -93,7 +96,8 @@ class ScenarioService:
                 strike=strike,
                 volatility=shifted_vol,
                 time_to_expiry_years=time_to_expiry_years,
-                risk_free_rate_domestic=risk_free_rate,
+                rf_rate_base=rf_rate_base,
+                rf_rate_quote=rf_rate_quote,
             )
             results.append({
                 "shift_vol": shift,
@@ -111,7 +115,8 @@ class ScenarioService:
         strike: float,
         volatility: float,
         time_to_expiry_years: float,
-        risk_free_rate: float,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
         days_forward: list[int] | None = None,
     ) -> list[dict]:
         """
@@ -136,7 +141,8 @@ class ScenarioService:
                 strike=strike,
                 volatility=volatility,
                 time_to_expiry_years=years_remaining,
-                risk_free_rate_domestic=risk_free_rate,
+                rf_rate_base=rf_rate_base,
+                rf_rate_quote=rf_rate_quote,
             )
             results.append({
                 "days_forward": days,
@@ -154,7 +160,8 @@ class ScenarioService:
         strike: float,
         base_vol: float,
         time_to_expiry_years: float,
-        risk_free_rate: float,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
         spot_shifts: list[float] | None = None,
         vol_shifts: list[float] | None = None,
     ) -> dict:
@@ -182,7 +189,8 @@ class ScenarioService:
             strike=strike,
             volatility=base_vol,
             time_to_expiry_years=time_to_expiry_years,
-            risk_free_rate_domestic=risk_free_rate,
+            rf_rate_base=rf_rate_base,
+            rf_rate_quote=rf_rate_quote,
         )
 
         values: list[list[float]] = []
@@ -198,7 +206,8 @@ class ScenarioService:
                     strike=strike,
                     volatility=shifted_vol,
                     time_to_expiry_years=time_to_expiry_years,
-                    risk_free_rate_domestic=risk_free_rate,
+                    rf_rate_base=rf_rate_base,
+                    rf_rate_quote=rf_rate_quote,
                 )
                 row.append(greeks.get("npv") or 0.0)
             values.append(row)

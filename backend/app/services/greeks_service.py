@@ -22,8 +22,8 @@ class GreeksService:
         strike: float,
         volatility: float,
         time_to_expiry_years: float,
-        risk_free_rate_domestic: float = 0.03,
-        risk_free_rate_foreign: float = 0.03,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
     ) -> dict:
         """
         Calculate Greeks for a plain vanilla European FX option.
@@ -35,8 +35,8 @@ class GreeksService:
             strike: Strike price
             volatility: Implied volatility (decimal, e.g. 0.15 for 15%)
             time_to_expiry_years: Time to expiry in years
-            risk_free_rate_domestic: Domestic risk-free rate
-            risk_free_rate_foreign: Foreign risk-free rate (for FX options)
+            rf_rate_base: Base currency risk-free rate (maps to QuantLib dividendYield)
+            rf_rate_quote: Quote currency risk-free rate (maps to QuantLib riskFreeRate)
 
         Returns:
             dict with keys: delta, gamma, vega, theta, rho, npv, error
@@ -59,16 +59,17 @@ class GreeksService:
             vol_handle = ql.BlackVolTermStructureHandle(
                 ql.BlackConstantVol(today, ql.TARGET(), volatility, ql.Actual365Fixed())
             )
-            r_dom_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, risk_free_rate_domestic, ql.Actual365Fixed())
+            r_base_handle = ql.YieldTermStructureHandle(
+                ql.FlatForward(today, rf_rate_base, ql.Actual365Fixed())
             )
-            r_for_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, risk_free_rate_foreign, ql.Actual365Fixed())
+            r_quote_handle = ql.YieldTermStructureHandle(
+                ql.FlatForward(today, rf_rate_quote, ql.Actual365Fixed())
             )
 
             # Black-Scholes-Merton process for FX
+            # r_base maps to dividendYield, r_quote maps to riskFreeRate
             bsm_process = ql.BlackScholesMertonProcess(
-                spot_handle, r_for_handle, r_dom_handle, vol_handle
+                spot_handle, r_base_handle, r_quote_handle, vol_handle
             )
 
             # Build option
@@ -125,7 +126,8 @@ class GreeksService:
         time_to_expiry_years: float,
         option_type: str = "Call",
         direction: str = "Buy",
-        risk_free_rate: float = 0.03,
+        rf_rate_base: float = 0.03,
+        rf_rate_quote: float = 0.03,
     ) -> dict:
         """Convenience wrapper that matches the Trade model's field names."""
         return self.calculate_vanilla_greeks(
@@ -135,8 +137,8 @@ class GreeksService:
             strike=strike,
             volatility=volatility,
             time_to_expiry_years=time_to_expiry_years,
-            risk_free_rate_domestic=risk_free_rate,
-            risk_free_rate_foreign=risk_free_rate,
+            rf_rate_base=rf_rate_base,
+            rf_rate_quote=rf_rate_quote,
         )
 
 

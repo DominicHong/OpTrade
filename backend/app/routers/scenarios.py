@@ -23,7 +23,8 @@ def scenario_spot_shift(
         strike=request.get("strike", 6.8),
         base_vol=request.get("base_vol", 0.05),
         time_to_expiry_years=request.get("time_to_expiry_years", 1.0),
-        risk_free_rate=request.get("risk_free_rate", 0.03),
+        rf_rate_base=request.get("rf_rate_base", 0.03),
+        rf_rate_quote=request.get("rf_rate_quote", 0.03),
         shifts_bps=shifts,
     )
 
@@ -42,7 +43,8 @@ def scenario_vol_shift(
         strike=request.get("strike", 6.8),
         base_vol=request.get("base_vol", 0.05),
         time_to_expiry_years=request.get("time_to_expiry_years", 1.0),
-        risk_free_rate=request.get("risk_free_rate", 0.03),
+        rf_rate_base=request.get("rf_rate_base", 0.03),
+        rf_rate_quote=request.get("rf_rate_quote", 0.03),
         shifts_vol=shifts,
     )
 
@@ -61,7 +63,8 @@ def scenario_time_decay(
         strike=request.get("strike", 6.8),
         volatility=request.get("volatility", 0.05),
         time_to_expiry_years=request.get("time_to_expiry_years", 1.0),
-        risk_free_rate=request.get("risk_free_rate", 0.03),
+        rf_rate_base=request.get("rf_rate_base", 0.03),
+        rf_rate_quote=request.get("rf_rate_quote", 0.03),
         days_forward=days,
     )
 
@@ -87,7 +90,8 @@ def scenario_heatmap(
         strike=request.get("strike", 6.8),
         base_vol=request.get("base_vol", 0.05),
         time_to_expiry_years=base_tte,
-        risk_free_rate=request.get("risk_free_rate", 0.03),
+        rf_rate_base=request.get("rf_rate_base", 0.03),
+        rf_rate_quote=request.get("rf_rate_quote", 0.03),
         spot_shifts=request.get("spot_shifts"),
         vol_shifts=request.get("vol_shifts"),
     )

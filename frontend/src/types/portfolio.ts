@@ -25,7 +25,8 @@ export interface PortfolioGreeksSummary {
 }
 
 export interface PortfolioGreeksRequest {
-  risk_free_rate: number
+  rf_rate_base: number
+  rf_rate_quote: number
   volatility?: number | null
   spot?: number | null
   valuation_date?: string | null
@@ -52,7 +53,8 @@ export interface PortfolioGreeksResponse {
   total_delta: number
   total_gamma: number
   total_npv: number
-  risk_free_rate: number
+  rf_rate_base: number
+  rf_rate_quote: number
   volatility_used: number | null
   spot_used: number | null
   trades: TradeGreeksDetail[]

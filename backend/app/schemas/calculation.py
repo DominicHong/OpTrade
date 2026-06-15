@@ -16,7 +16,8 @@ class GreeksResult(BaseModel):
     rho: float | None = None
     spot: float | None = None
     volatility: float | None = None
-    risk_free_rate: float | None = None
+    rf_rate_base: float | None = None
+    rf_rate_quote: float | None = None
     time_to_expiry_years: float | None = None
     scenario_label: str = "base"
     error: str | None = None
@@ -30,7 +31,8 @@ class GreeksRequest(BaseModel):
     trade_ids: list[int]
     spot: float | None = None
     volatility: float | None = None
-    risk_free_rate: float | None = None
+    rf_rate_base: float | None = None
+    rf_rate_quote: float | None = None
     scenario_label: str = "base"
 
 
@@ -43,7 +45,8 @@ class PricingRequest(BaseModel):
     strike: float
     volatility: float
     time_to_expiry_years: float
-    risk_free_rate: float
+    rf_rate_base: float = 0.03
+    rf_rate_quote: float = 0.03
     notional: float = 1.0
 
 

@@ -10,7 +10,8 @@ export interface GreeksResult {
   rho: number | null
   spot: number | null
   volatility: number | null
-  risk_free_rate: number | null
+  rf_rate_base: number | null
+  rf_rate_quote: number | null
   time_to_expiry_years: number | null
   scenario_label: string
   error: string | null
@@ -20,7 +21,8 @@ export interface GreeksRequest {
   trade_ids: number[]
   spot?: number | null
   volatility?: number | null
-  risk_free_rate?: number | null
+  rf_rate_base?: number | null
+  rf_rate_quote?: number | null
   scenario_label?: string
 }
 
@@ -31,7 +33,8 @@ export interface PricingRequest {
   strike: number
   volatility: number
   time_to_expiry_years: number
-  risk_free_rate: number
+  rf_rate_base: number
+  rf_rate_quote: number
   notional?: number
 }
 
@@ -52,7 +55,8 @@ export interface ScenarioRequest {
   }
   base_spot?: number
   base_vol?: number
-  risk_free_rate?: number
+  rf_rate_base?: number
+  rf_rate_quote?: number
   valuation_date?: string | null
 }
 

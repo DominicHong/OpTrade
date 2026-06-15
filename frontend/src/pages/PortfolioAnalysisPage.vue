@@ -9,7 +9,8 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 const pfStore = usePortfolioStore()
 
 // Greeks parameters
-const riskFreeRate = ref(3)
+const rfRateBase = ref(3)
+const rfRateQuote = ref(3)
 const volatility = ref<number | null>(null)
 const spot = ref<number | null>(null)
 const valuationDate = ref(new Date().toISOString().slice(0, 10))
@@ -35,7 +36,8 @@ async function calculateGreeks() {
   greeksError.value = null
   try {
     greeksResult.value = await fetchPortfolioGreeks(pfStore.currentPortfolio.id, {
-      risk_free_rate: riskFreeRate.value / 100,
+      rf_rate_base: rfRateBase.value / 100,
+      rf_rate_quote: rfRateQuote.value / 100,
       volatility: volatility.value != null ? volatility.value / 100 : null,
       spot: spot.value,
       valuation_date: valuationDate.value,
@@ -93,8 +95,12 @@ function fmt(val: number | null | undefined, decimals = 4): string {
             <input id="valuation-date" type="date" v-model="valuationDate" />
           </div>
           <div class="param-field">
-            <label for="risk-free-rate">无风险利率 (%)</label>
-            <input id="risk-free-rate" type="number" step="0.1" v-model.number="riskFreeRate" placeholder="3" />
+            <label for="rf-rate-base">Base 货币无风险利率 (%)</label>
+            <input id="rf-rate-base" type="number" step="0.1" v-model.number="rfRateBase" placeholder="3" />
+          </div>
+          <div class="param-field">
+            <label for="rf-rate-quote">Quote 货币无风险利率 (%)</label>
+            <input id="rf-rate-quote" type="number" step="0.1" v-model.number="rfRateQuote" placeholder="3" />
           </div>
           <div class="param-field">
             <label for="volatility">波动率 (%)</label>
@@ -128,7 +134,7 @@ function fmt(val: number | null | undefined, decimals = 4): string {
           </div>
         </div>
         <div class="params-used">
-          <span>参数: r = {{ (greeksResult.risk_free_rate * 100).toFixed(2) }}%, vol = {{ greeksResult.volatility_used != null ? (greeksResult.volatility_used * 100).toFixed(2) + '%' : '交易自带' }}, spot = {{ greeksResult.spot_used ?? '交易自带' }}</span>
+          <span>参数: base r = {{ (greeksResult.rf_rate_base * 100).toFixed(2) }}%, quote r = {{ (greeksResult.rf_rate_quote * 100).toFixed(2) }}%, vol = {{ greeksResult.volatility_used != null ? (greeksResult.volatility_used * 100).toFixed(2) + '%' : '交易自带' }}, spot = {{ greeksResult.spot_used ?? '交易自带' }}</span>
         </div>
       </div>
 

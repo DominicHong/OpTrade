@@ -38,10 +38,10 @@ class MarketDataService:
             return {
                 "spot": snapshot.spot,
                 "volatility": snapshot.volatility,
-                "rate_domestic": snapshot.risk_free_rate_domestic,
-                "rate_foreign": snapshot.risk_free_rate_foreign,
+                "rf_rate_base": snapshot.rf_rate_base,
+                "rf_rate_quote": snapshot.rf_rate_quote,
             }
-        return {"spot": None, "volatility": None, "rate_domestic": None, "rate_foreign": None}
+        return {"spot": None, "volatility": None, "rf_rate_base": None, "rf_rate_quote": None}
 
 
 # Singleton

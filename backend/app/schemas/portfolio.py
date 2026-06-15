@@ -39,7 +39,8 @@ class PortfolioGreeksSummary(BaseModel):
 class PortfolioGreeksRequest(BaseModel):
     """Request to calculate aggregated Greeks for a portfolio."""
 
-    risk_free_rate: float = 0.03
+    rf_rate_base: float = 0.03
+    rf_rate_quote: float = 0.03
     volatility: float | None = None
     spot: float | None = None
     valuation_date: date | None = None
@@ -70,7 +71,8 @@ class PortfolioGreeksResponse(BaseModel):
     total_delta: float = 0.0
     total_gamma: float = 0.0
     total_npv: float = 0.0
-    risk_free_rate: float = 0.03
+    rf_rate_base: float = 0.03
+    rf_rate_quote: float = 0.03
     volatility_used: float | None = None
     spot_used: float | None = None
     trades: list[TradeGreeksDetail] = []
