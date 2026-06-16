@@ -79,7 +79,7 @@ function goBack() { router.push('/trades') }
           <h3>期权费</h3>
           <dl>
             <dt>期权费类型</dt><dd>{{ store.currentTrade.premium_type || '--' }}</dd>
-            <dt>期权费率</dt><dd>{{ formatNumber(store.currentTrade.premium_rate, 4) }}</dd>
+            <dt>期权费率</dt><dd>{{ formatNumber(store.currentTrade.premium_rate, 2) }}</dd>
             <dt>期权费金额</dt><dd>{{ formatNumber(store.currentTrade.premium_amount) }}</dd>
             <dt>期权费货币</dt><dd>{{ store.currentTrade.premium_currency || '--' }}</dd>
           </dl>

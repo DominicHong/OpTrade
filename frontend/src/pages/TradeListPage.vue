@@ -34,6 +34,9 @@ const modalMode = ref<'create' | 'edit'>('create')
 const formError = ref<string | null>(null)
 const formLoading = ref(false)
 
+// Track which premium field the user is actively editing
+const premiumEditingField = ref<'rate' | 'amount' | null>(null)
+
 const emptyForm: TradeCreate = {
   trade_id: '',
   ccy_pair: 'USD/CNY',
@@ -41,31 +44,123 @@ const emptyForm: TradeCreate = {
   direction: '买入',
   strike: null,
   notional1: null,
+  notional2: null,
   expiry_date: null,
   counterparty_name: null,
   portfolio_name: null,
   option_type: null,
+  premium_type: null,
+  premium_rate: null,
+  premium_amount: null,
+  premium_currency: null,
 }
 
 const form = ref<TradeCreate | TradeUpdate>({ ...emptyForm })
 const editingTradeId = ref<number | null>(null)
 
+/** Determine which notional to use for premium calc based on premium_type + premium_currency + ccy_pair. */
+function getNotionalForCalc(): number | null {
+  const type = form.value.premium_type
+  const currency = form.value.premium_currency
+  const ccyPair = form.value.ccy_pair
+  if (!type || !currency || !ccyPair) return null
+
+  const parts = ccyPair.split('/')
+  if (parts.length !== 2) return null
+  const [ccy1, ccy2] = parts
+  const isCcy2 = currency === ccy2
+
+  if (type === 'Pips') {
+    // Pips + ccy2 -> notional1; Pips + ccy1 -> notional2
+    return (isCcy2 ? form.value.notional1 : form.value.notional2) ?? null
+  } else {
+    // % + ccy2 -> notional2; % + ccy1 -> notional1
+    return (isCcy2 ? form.value.notional2 : form.value.notional1) ?? null
+  }
+}
+
+/** Compute premium amount from rate. */
+function calcPremiumFromRate() {
+  const rate = form.value.premium_rate
+  const type = form.value.premium_type
+  const notional = getNotionalForCalc()
+  if (rate == null || notional == null || !type) return
+  if (type === 'Pips') {
+    form.value.premium_amount = Number((rate * notional / 10000).toFixed(2))
+  } else if (type === '%') {
+    form.value.premium_amount = Number((rate * notional / 100).toFixed(2))
+  }
+}
+
+/** Compute premium rate from amount. */
+function calcPremiumRateFromAmount() {
+  const amount = form.value.premium_amount
+  const type = form.value.premium_type
+  const notional = getNotionalForCalc()
+  if (amount == null || notional == null || !type || notional === 0) return
+  if (type === 'Pips') {
+    form.value.premium_rate = Number((amount * 10000 / notional).toFixed(4))
+  } else if (type === '%') {
+    form.value.premium_rate = Number((amount * 100 / notional).toFixed(4))
+  }
+}
+
+function onPremiumRateInput() {
+  premiumEditingField.value = 'rate'
+  calcPremiumFromRate()
+}
+
+function onPremiumAmountInput() {
+  premiumEditingField.value = 'amount'
+  calcPremiumRateFromAmount()
+}
+
+// When premium_type, premium_currency, notional1 or notional2 changes, recalculate
+watch(() => form.value.premium_type, () => {
+  if (premiumEditingField.value === 'rate') calcPremiumFromRate()
+  else if (premiumEditingField.value === 'amount') calcPremiumRateFromAmount()
+})
+
+watch(() => form.value.premium_currency, () => {
+  if (premiumEditingField.value === 'rate') calcPremiumFromRate()
+  else if (premiumEditingField.value === 'amount') calcPremiumRateFromAmount()
+})
+
+watch(() => form.value.notional1, () => {
+  if (premiumEditingField.value === 'rate') calcPremiumFromRate()
+  else if (premiumEditingField.value === 'amount') calcPremiumRateFromAmount()
+})
+
+watch(() => form.value.notional2, () => {
+  if (premiumEditingField.value === 'rate') calcPremiumFromRate()
+  else if (premiumEditingField.value === 'amount') calcPremiumRateFromAmount()
+})
+
 // --- Delete confirmation ---
 const deleteConfirmId = ref<number | null>(null)
 
-const columns: TableColumn[] = [
-  { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
-  { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
-  { key: 'trade_type', label: '类型', sortable: true, width: '60px' },
-  { key: 'direction', label: '方向', sortable: true, width: '60px' },
-  { key: 'strike', label: '执行价', sortable: true, width: '90px', align: 'right' },
-  { key: 'notional1', label: '名义本金(万)', sortable: true, width: '120px', align: 'right' },
-  { key: 'expiry_date', label: '到期日', sortable: true, width: '100px' },
-  { key: 'counterparty_name', label: '对手方', width: '120px' },
-  { key: 'exercise_status', label: '行权状态', width: '80px' },
-  { key: 'delivery_status', label: '交割状态', width: '80px' },
-  { key: 'actions', label: '操作', width: '100px' },
-]
+const columns = computed<TableColumn[]>(() => {
+  const types = new Set(store.trades.map(t => t.premium_type).filter(Boolean) as string[])
+  const premiumRateLabel =
+    types.size === 1 && types.has('Pips') ? '期权费率(pips)'
+    : types.size === 1 && types.has('%') ? '期权费率(%)'
+    : '期权费率'
+
+  return [
+    { key: 'actions', label: '操作', width: '100px' },
+    { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
+    { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
+    { key: 'trade_type', label: '类型', sortable: true, width: '60px' },
+    { key: 'direction', label: '方向', sortable: true, width: '60px' },
+    { key: 'strike', label: '执行价', sortable: true, width: '90px', align: 'right' },
+    { key: 'premium_rate', label: premiumRateLabel, sortable: true, width: '90px', align: 'right' },
+    { key: 'notional1', label: '名义本金(万)', sortable: true, width: '120px', align: 'right' },
+    { key: 'expiry_date', label: '到期日', sortable: true, width: '100px' },
+    { key: 'counterparty_name', label: '对手方', width: '120px' },
+    { key: 'exercise_status', label: '行权状态', width: '80px' },
+    { key: 'delivery_status', label: '交割状态', width: '80px' },
+  ]
+})
 
 onMounted(() => {
   store.loadTrades()
@@ -136,6 +231,7 @@ function openEditModal(trade: Trade) {
     direction: trade.direction,
     strike: trade.strike,
     notional1: trade.notional1,
+    notional2: trade.notional2,
     expiry_date: trade.expiry_date,
     counterparty_name: trade.counterparty_name,
     portfolio_name: trade.portfolio_name,
@@ -143,6 +239,10 @@ function openEditModal(trade: Trade) {
     source_trade_id: trade.source_trade_id,
     spot_rate: trade.spot_rate,
     volatility: trade.volatility != null ? trade.volatility * 100 : null,
+    premium_type: trade.premium_type,
+    premium_rate: trade.premium_rate,
+    premium_amount: trade.premium_amount,
+    premium_currency: trade.premium_currency,
     exercise_status: trade.exercise_status,
     delivery_status: trade.delivery_status,
     comments: trade.comments,
@@ -253,6 +353,9 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         </template>
         <template #cell-strike="{ row }">
           <NumberDisplay :value="row.strike as number" :decimals="4" />
+        </template>
+        <template #cell-premium_rate="{ row }">
+          <NumberDisplay :value="row.premium_rate as number" :decimals="2" />
         </template>
         <template #cell-expiry_date="{ row }">
           {{ formatDate(row.expiry_date as string) }}
@@ -416,6 +519,28 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
                 <input v-model="form.portfolio_name" placeholder="投资组合名称" />
               </div>
               <div class="form-field">
+                <label>期权费类型</label>
+                <select v-model="form.premium_type">
+                  <option value="Pips">Pips</option>
+                  <option value="%">%</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>期权费率</label>
+                <input v-model.number="form.premium_rate" type="number" step="0.0001" placeholder="如 15" @input="onPremiumRateInput" />
+              </div>
+              <div class="form-field">
+                <label>期权费金额</label>
+                <input v-model.number="form.premium_amount" type="number" step="1" placeholder="如 15000" @input="onPremiumAmountInput" />
+              </div>
+              <div class="form-field">
+                <label>期权费货币</label>
+                <select v-model="form.premium_currency">
+                  <option v-if="form.ccy_pair" :value="form.ccy_pair.split('/')[0]">{{ form.ccy_pair.split('/')[0] }}</option>
+                  <option v-if="form.ccy_pair" :value="form.ccy_pair.split('/')[1]">{{ form.ccy_pair.split('/')[1] }}</option>
+                </select>
+              </div>
+              <div class="form-field">
                 <label>即期汇率</label>
                 <input v-model.number="form.spot_rate" type="number" step="0.0001" placeholder="如 6.8500" />
               </div>
@@ -426,7 +551,6 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
               <div class="form-field">
                 <label>行权状态</label>
                 <select v-model="form.exercise_status">
-                  <option :value="null">--</option>
                   <option value="未到期">未到期</option>
                   <option value="已行权">已行权</option>
                   <option value="未行权">未行权</option>
@@ -436,7 +560,6 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
               <div class="form-field">
                 <label>交割状态</label>
                 <select v-model="form.delivery_status">
-                  <option :value="null">--</option>
                   <option value="未交割">未交割</option>
                   <option value="已交割">已交割</option>
                 </select>

@@ -7,6 +7,7 @@ cross-reference each other via SQLAlchemy relationships.
 
 from datetime import date, datetime, timezone
 
+from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -175,6 +176,25 @@ class Trade(SQLModel, table=True):
     created_timestamp: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("premium_type")
+    @classmethod
+    def validate_premium_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("Pips", "%"):
+            raise ValueError("premium_type must be 'Pips' or '%'")
+        return v
+
+    @field_validator("premium_currency")
+    @classmethod
+    def validate_premium_currency(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return v
+        ccy_pair = info.data.get("ccy_pair")
+        if ccy_pair:
+            parts = ccy_pair.split("/")
+            if len(parts) == 2 and v not in parts:
+                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
+        return v
 
 
 class CalculationResult(SQLModel, table=True):

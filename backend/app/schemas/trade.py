@@ -1,7 +1,8 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class TradeRead(BaseModel):
@@ -118,7 +119,7 @@ class TradeCreate(BaseModel):
     premium_payment_date: date | None = None
 
     # Premium
-    premium_type: str | None = None
+    premium_type: Literal["Pips", "%"] | None = None
     premium_rate: float | None = None
     premium_amount: float | None = None
     premium_currency: str | None = None
@@ -153,6 +154,18 @@ class TradeCreate(BaseModel):
     operator: str | None = None
     source: str | None = None
     comments: str | None = None
+
+    @field_validator("premium_currency")
+    @classmethod
+    def validate_premium_currency(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return v
+        ccy_pair = info.data.get("ccy_pair")
+        if ccy_pair:
+            parts = ccy_pair.split("/")
+            if len(parts) == 2 and v not in parts:
+                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
+        return v
 
 
 class TradeUpdate(BaseModel):
@@ -184,7 +197,7 @@ class TradeUpdate(BaseModel):
     premium_payment_date: date | None = None
 
     # Premium
-    premium_type: str | None = None
+    premium_type: Literal["Pips", "%"] | None = None
     premium_rate: float | None = None
     premium_amount: float | None = None
     premium_currency: str | None = None
@@ -219,6 +232,18 @@ class TradeUpdate(BaseModel):
     operator: str | None = None
     source: str | None = None
     comments: str | None = None
+
+    @field_validator("premium_currency")
+    @classmethod
+    def validate_premium_currency(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return v
+        ccy_pair = info.data.get("ccy_pair")
+        if ccy_pair:
+            parts = ccy_pair.split("/")
+            if len(parts) == 2 and v not in parts:
+                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
+        return v
 
 
 class TradeFilterParams(BaseModel):
