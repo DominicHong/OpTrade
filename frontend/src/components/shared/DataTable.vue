@@ -16,22 +16,75 @@ const props = withDefaults(defineProps<{
   sortBy?: string
   sortOrder?: string
   emptyMessage?: string
+  selectable?: boolean
+  selectedIds?: number[]
+  rowKey?: string
 }>(), {
   loading: false,
   sortBy: '',
   sortOrder: 'asc',
   emptyMessage: '暂无数据',
+  selectable: false,
+  selectedIds: () => [],
+  rowKey: 'id',
 })
 
 const emit = defineEmits<{
   'sort': [column: string]
   'row-click': [row: T]
+  'update:selectedIds': [ids: number[]]
 }>()
 
 function onHeaderClick(col: TableColumn) {
   if (col.sortable) {
     emit('sort', col.key)
   }
+}
+
+const allSelected = computed(() => {
+  if (props.rows.length === 0) return false
+  return props.rows.every(row => {
+    const id = (row as Record<string, unknown>)[props.rowKey] as number
+    return props.selectedIds.includes(id)
+  })
+})
+
+const someSelected = computed(() => {
+  return props.rows.some(row => {
+    const id = (row as Record<string, unknown>)[props.rowKey] as number
+    return props.selectedIds.includes(id)
+  })
+})
+
+function toggleAll() {
+  if (allSelected.value) {
+    // Deselect all on current page
+    const currentPageIds = new Set(props.rows.map(row => (row as Record<string, unknown>)[props.rowKey] as number))
+    const remaining = props.selectedIds.filter(id => !currentPageIds.has(id))
+    emit('update:selectedIds', remaining)
+  } else {
+    // Select all on current page
+    const currentPageIds = props.rows.map(row => (row as Record<string, unknown>)[props.rowKey] as number)
+    const merged = new Set([...props.selectedIds, ...currentPageIds])
+    emit('update:selectedIds', Array.from(merged))
+  }
+}
+
+function toggleRow(row: T) {
+  const id = (row as Record<string, unknown>)[props.rowKey] as number
+  const idx = props.selectedIds.indexOf(id)
+  if (idx >= 0) {
+    const newIds = [...props.selectedIds]
+    newIds.splice(idx, 1)
+    emit('update:selectedIds', newIds)
+  } else {
+    emit('update:selectedIds', [...props.selectedIds, id])
+  }
+}
+
+function isRowSelected(row: T): boolean {
+  const id = (row as Record<string, unknown>)[props.rowKey] as number
+  return props.selectedIds.includes(id)
 }
 </script>
 
@@ -40,6 +93,15 @@ function onHeaderClick(col: TableColumn) {
     <table class="data-table">
       <thead>
         <tr>
+          <th v-if="selectable" class="checkbox-col" @click.stop>
+            <input
+              type="checkbox"
+              :checked="allSelected"
+              :indeterminate="someSelected && !allSelected"
+              @change="toggleAll"
+              class="row-checkbox"
+            />
+          </th>
           <th
             v-for="col in columns"
             :key="col.key"
@@ -60,7 +122,7 @@ function onHeaderClick(col: TableColumn) {
       </thead>
       <tbody>
         <tr v-if="loading">
-          <td :colspan="columns.length" class="empty-cell">
+          <td :colspan="columns.length + (selectable ? 1 : 0)" class="empty-cell">
             <div class="loading-cell">
               <div class="loading-dots">
                 <span></span><span></span><span></span>
@@ -70,14 +132,23 @@ function onHeaderClick(col: TableColumn) {
           </td>
         </tr>
         <tr v-else-if="rows.length === 0">
-          <td :colspan="columns.length" class="empty-cell">{{ emptyMessage }}</td>
+          <td :colspan="columns.length + (selectable ? 1 : 0)" class="empty-cell">{{ emptyMessage }}</td>
         </tr>
         <tr
           v-for="(row, idx) in rows"
           :key="idx"
           @click="emit('row-click', row)"
           class="data-row"
+          :class="{ 'row-selected': selectable && isRowSelected(row) }"
         >
+          <td v-if="selectable" class="checkbox-col" @click.stop>
+            <input
+              type="checkbox"
+              :checked="isRowSelected(row)"
+              @change="toggleRow(row)"
+              class="row-checkbox"
+            />
+          </td>
           <td
             v-for="col in columns"
             :key="col.key"
@@ -132,6 +203,7 @@ function onHeaderClick(col: TableColumn) {
   transition: background var(--transition-fast);
 }
 .data-row:hover { background: var(--color-primary-bg); }
+.data-row.row-selected { background: var(--color-primary-bg); }
 .data-row:last-child td { border-bottom: none; }
 .sort-arrow { font-size: 0.625rem; margin-left: 2px; }
 .empty-cell { text-align: center; padding: 2.5rem; color: var(--color-text-secondary); }
@@ -154,4 +226,15 @@ function onHeaderClick(col: TableColumn) {
 }
 .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
 .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+.checkbox-col {
+  width: 40px;
+  text-align: center !important;
+  padding: 0.6rem 0.5rem !important;
+}
+.row-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
 </style>

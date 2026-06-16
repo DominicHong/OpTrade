@@ -24,3 +24,8 @@ export async function updateTrade(id: number, payload: TradeUpdate): Promise<Tra
 export async function deleteTrade(id: number): Promise<void> {
   await apiClient.delete(`/trades/${id}`)
 }
+
+export async function batchDeleteTrades(ids: number[]): Promise<{ status: string; count: string }> {
+  const { data } = await apiClient.post('/trades/batch-delete', { ids })
+  return data
+}

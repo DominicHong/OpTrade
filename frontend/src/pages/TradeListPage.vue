@@ -136,8 +136,34 @@ watch(() => form.value.notional2, () => {
   else if (premiumEditingField.value === 'amount') calcPremiumRateFromAmount()
 })
 
-// --- Delete confirmation ---
-const deleteConfirmId = ref<number | null>(null)
+// --- Batch selection ---
+const selectedIds = ref<number[]>([])
+const showBatchDeleteConfirm = ref(false)
+
+function onSelectionChange(ids: number[]) {
+  selectedIds.value = ids
+}
+
+function confirmBatchDelete() {
+  if (selectedIds.value.length === 0) return
+  showBatchDeleteConfirm.value = true
+}
+
+async function doBatchDelete() {
+  try {
+    const count = await store.batchDelete(selectedIds.value)
+    ui.addNotification('success', `已删除 ${count} 条交易`)
+    selectedIds.value = []
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
+  } finally {
+    showBatchDeleteConfirm.value = false
+  }
+}
+
+function cancelBatchDelete() {
+  showBatchDeleteConfirm.value = false
+}
 
 const columns = computed<TableColumn[]>(() => {
   const types = new Set(store.trades.map(t => t.premium_type).filter(Boolean) as string[])
@@ -147,7 +173,7 @@ const columns = computed<TableColumn[]>(() => {
     : '期权费率'
 
   return [
-    { key: 'actions', label: '操作', width: '100px' },
+    { key: 'actions', label: '编辑', width: '100px' },
     { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
     { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
     { key: 'trade_type', label: '类型', sortable: true, width: '60px' },
@@ -169,6 +195,7 @@ onMounted(() => {
 
 watch(search, (val) => {
   store.setFilters({ search: val })
+  selectedIds.value = []
 })
 
 function onSort(col: string) {
@@ -275,27 +302,6 @@ async function submitForm() {
   }
 }
 
-// --- Delete ---
-function confirmDelete(id: number) {
-  deleteConfirmId.value = id
-}
-
-async function doDelete() {
-  if (!deleteConfirmId.value) return
-  try {
-    await store.removeTrade(deleteConfirmId.value)
-    ui.addNotification('success', '交易已删除')
-  } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
-  } finally {
-    deleteConfirmId.value = null
-  }
-}
-
-function cancelDelete() {
-  deleteConfirmId.value = null
-}
-
 // --- Modal overlay click guard (prevents closing on drag from inside) ---
 const { onOverlayMousedown, onOverlayClick } = useModalGuard(showModal)
 
@@ -333,6 +339,10 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
           </select>
         </div>
         <div class="toolbar-spacer"></div>
+        <button v-if="selectedIds.length > 0" class="btn-danger" @click="confirmBatchDelete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          删除选中 ({{ selectedIds.length }})
+        </button>
         <button class="btn-primary" @click="openCreateModal">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           新建交易
@@ -345,8 +355,12 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         :loading="store.loading"
         :sort-by="store.filters.sort_by"
         :sort-order="store.filters.sort_order"
+        selectable
+        :selected-ids="selectedIds"
+        row-key="id"
         @sort="onSort"
         @row-click="onRowClick"
+        @update:selected-ids="onSelectionChange"
       >
         <template #cell-notional1="{ row }">
           <NumberDisplay :value="toWan(row.notional1 as number)" />
@@ -369,9 +383,6 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
           <div class="action-btns" @click.stop>
             <button class="action-btn action-edit" title="编辑" @click="openEditModal(row as unknown as Trade)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-            <button class="action-btn action-delete" title="删除" @click="confirmDelete((row as unknown as Trade).id)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </button>
           </div>
         </template>
@@ -580,20 +591,20 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
       </div>
     </Teleport>
 
-    <!-- ==================== Delete Confirmation ==================== -->
+    <!-- ==================== Batch Delete Confirmation ==================== -->
     <Teleport to="body">
-      <div v-if="deleteConfirmId !== null" class="modal-overlay" @click.self="cancelDelete">
+      <div v-if="showBatchDeleteConfirm" class="modal-overlay" @click.self="cancelBatchDelete">
         <div class="modal modal-sm">
           <div class="modal-header">
-            <h3>确认删除</h3>
-            <button class="modal-close" @click="cancelDelete">&times;</button>
+            <h3>确认批量删除</h3>
+            <button class="modal-close" @click="cancelBatchDelete">&times;</button>
           </div>
           <div class="modal-body">
-            <p>确定要删除该交易吗？此操作不可撤销。</p>
+            <p>确定要删除选中的 <strong>{{ selectedIds.length }}</strong> 条交易吗？此操作不可撤销。</p>
           </div>
           <div class="modal-footer">
-            <button class="btn-secondary" @click="cancelDelete">取消</button>
-            <button class="btn-danger" @click="doDelete">删除</button>
+            <button class="btn-secondary" @click="cancelBatchDelete">取消</button>
+            <button class="btn-danger" @click="doBatchDelete">删除</button>
           </div>
         </div>
       </div>

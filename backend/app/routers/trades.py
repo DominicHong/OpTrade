@@ -1,6 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from app.database import get_session
@@ -8,6 +9,28 @@ from app.models.trade import Trade
 from app.schemas.trade import TradeCreate, TradeFilterParams, TradeListResponse, TradeRead, TradeUpdate
 
 router = APIRouter(prefix="/api/v1/trades", tags=["trades"])
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[int]
+
+
+@router.post("/batch-delete")
+def batch_delete_trades(
+    req: BatchDeleteRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    """Delete multiple trades by their database IDs."""
+    if not req.ids:
+        raise HTTPException(status_code=400, detail="No trade IDs provided")
+    deleted = 0
+    for trade_id in req.ids:
+        trade = session.get(Trade, trade_id)
+        if trade:
+            session.delete(trade)
+            deleted += 1
+    session.commit()
+    return {"status": "deleted", "count": str(deleted)}
 
 
 @router.get("", response_model=TradeListResponse)

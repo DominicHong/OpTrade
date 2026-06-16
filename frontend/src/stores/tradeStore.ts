@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Trade, TradeCreate, TradeFilterParams, TradeUpdate } from '@/types/trade'
-import { fetchTrades, fetchTrade, createTrade as apiCreateTrade, updateTrade as apiUpdateTrade, deleteTrade as apiDeleteTrade } from '@/api/trades'
+import { fetchTrades, fetchTrade, createTrade as apiCreateTrade, updateTrade as apiUpdateTrade, deleteTrade as apiDeleteTrade, batchDeleteTrades as apiBatchDelete } from '@/api/trades'
 
 export const useTradeStore = defineStore('trade', () => {
   const trades = ref<Trade[]>([])
@@ -68,6 +68,15 @@ export const useTradeStore = defineStore('trade', () => {
     if (currentTrade.value?.id === id) currentTrade.value = null
   }
 
+  async function batchDelete(ids: number[]) {
+    const result = await apiBatchDelete(ids)
+    const deletedCount = parseInt(result.count, 10)
+    trades.value = trades.value.filter(t => !ids.includes(t.id))
+    totalCount.value -= deletedCount
+    if (currentTrade.value && ids.includes(currentTrade.value.id)) currentTrade.value = null
+    return deletedCount
+  }
+
   function setPage(page: number) {
     filters.value.page = page
     loadTrades()
@@ -80,6 +89,6 @@ export const useTradeStore = defineStore('trade', () => {
 
   return {
     trades, currentTrade, totalCount, loading, error, filters,
-    loadTrades, loadTrade, addTrade, saveTrade, removeTrade, setPage, setFilters,
+    loadTrades, loadTrade, addTrade, saveTrade, removeTrade, batchDelete, setPage, setFilters,
   }
 })
