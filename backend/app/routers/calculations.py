@@ -47,7 +47,8 @@ def calculate_greeks(
         rf_rate_base = request.rf_rate_base or 0.03
         rf_rate_quote = request.rf_rate_quote or 0.03
 
-        days_to_expiry = (trade.expiry_date - date.today()).days
+        valuation_date = request.valuation_date or date.today()
+        days_to_expiry = (trade.expiry_date - valuation_date).days
         tte = max(days_to_expiry / 365.0, 0.001)
 
         greeks = greeks_service.calculate_vanilla_greeks(
@@ -59,6 +60,8 @@ def calculate_greeks(
             time_to_expiry_years=tte,
             rf_rate_base=rf_rate_base,
             rf_rate_quote=rf_rate_quote,
+            valuation_date=valuation_date,
+            expiry_date=trade.expiry_date,
         )
 
         # Persist to cache

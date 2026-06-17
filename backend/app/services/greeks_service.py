@@ -10,6 +10,10 @@ from datetime import date
 import QuantLib as ql
 from app.utils.quantlib_helpers import get_ql_option_type, get_ql_position
 
+# Fixed anchor date — avoids ql.Date.todaysDate() which makes results
+# non-reproducible and dependent on the system clock.
+_ANCHOR_DATE = ql.Date(15, 6, 2020)
+
 
 class GreeksService:
     """Computes option Greeks using QuantLib's analytic engines."""
@@ -24,6 +28,8 @@ class GreeksService:
         time_to_expiry_years: float,
         rf_rate_base: float = 0.03,
         rf_rate_quote: float = 0.03,
+        valuation_date: date | None = None,
+        expiry_date: date | None = None,
     ) -> dict:
         """
         Calculate Greeks for a plain vanilla European FX option.
@@ -34,36 +40,52 @@ class GreeksService:
             spot: Current spot price of the underlying
             strike: Strike price
             volatility: Implied volatility (decimal, e.g. 0.15 for 15%)
-            time_to_expiry_years: Time to expiry in years
+            time_to_expiry_years: Time to expiry in years (used when
+                valuation_date/expiry_date are not provided)
             rf_rate_base: Base currency risk-free rate (maps to QuantLib dividendYield)
             rf_rate_quote: Quote currency risk-free rate (maps to QuantLib riskFreeRate)
+            valuation_date: Trade valuation date (optional, enables reproducible results)
+            expiry_date: Option expiry date (optional, avoids roundtrip precision loss)
 
         Returns:
             dict with keys: delta, gamma, vega, theta, rho, npv, error
         """
         try:
-            today = ql.Date.todaysDate()
-            ql.Settings.instance().evaluationDate = today
+            # Determine evaluation and expiry dates
+            if valuation_date is not None and expiry_date is not None:
+                # Exact dates — no precision loss, fully reproducible
+                eval_d = ql.Date(
+                    valuation_date.day, valuation_date.month, valuation_date.year
+                )
+                exp_d = ql.Date(
+                    expiry_date.day, expiry_date.month, expiry_date.year
+                )
+            else:
+                # Use anchor + TTE (backward compatible, for scenario analysis)
+                # Use round() instead of int() to avoid FP truncation:
+                # int(3/365*365) = int(2.999...) = 2 (WRONG, loses 33% of T)
+                # int(3/365*365 + 0.5) = int(3.499...) = 3 (CORRECT)
+                eval_d = _ANCHOR_DATE
+                days = max(1, int(time_to_expiry_years * 365 + 0.5))
+                exp_d = eval_d + days
 
-            # Calculate expiry date
-            days_to_expiry = int(time_to_expiry_years * 365)
-            expiry_date = today + days_to_expiry
+            ql.Settings.instance().evaluationDate = eval_d
 
             # Set up the option
             option_type_ql = get_ql_option_type(option_type)
             payoff = ql.PlainVanillaPayoff(option_type_ql, strike)
-            exercise = ql.EuropeanExercise(expiry_date)
+            exercise = ql.EuropeanExercise(exp_d)
 
             # Market data
             spot_handle = ql.QuoteHandle(ql.SimpleQuote(spot))
             vol_handle = ql.BlackVolTermStructureHandle(
-                ql.BlackConstantVol(today, ql.TARGET(), volatility, ql.Actual365Fixed())
+                ql.BlackConstantVol(eval_d, ql.TARGET(), volatility, ql.Actual365Fixed())
             )
             r_base_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, rf_rate_base, ql.Actual365Fixed())
+                ql.FlatForward(eval_d, rf_rate_base, ql.Actual365Fixed())
             )
             r_quote_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, rf_rate_quote, ql.Actual365Fixed())
+                ql.FlatForward(eval_d, rf_rate_quote, ql.Actual365Fixed())
             )
 
             # Black-Scholes-Merton process for FX
@@ -128,6 +150,8 @@ class GreeksService:
         direction: str = "Buy",
         rf_rate_base: float = 0.03,
         rf_rate_quote: float = 0.03,
+        valuation_date: date | None = None,
+        expiry_date: date | None = None,
     ) -> dict:
         """Convenience wrapper that matches the Trade model's field names."""
         return self.calculate_vanilla_greeks(
@@ -139,6 +163,8 @@ class GreeksService:
             time_to_expiry_years=time_to_expiry_years,
             rf_rate_base=rf_rate_base,
             rf_rate_quote=rf_rate_quote,
+            valuation_date=valuation_date,
+            expiry_date=expiry_date,
         )
 
 

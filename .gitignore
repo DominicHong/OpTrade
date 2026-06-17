@@ -17,6 +17,7 @@ frontend/dist/
 # Database
 *.db
 *.sqlite3
+data/
 
 # IDE
 .vscode/
@@ -39,3 +40,4 @@ htmlcov/
 
 # Claude Code
 .claude/
+backend/tests/test_greeks_validation.py

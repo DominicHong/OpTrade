@@ -33,6 +33,7 @@ class GreeksRequest(BaseModel):
     volatility: float | None = None
     rf_rate_base: float | None = None
     rf_rate_quote: float | None = None
+    valuation_date: date | None = None
     scenario_label: str = "base"
 
 
