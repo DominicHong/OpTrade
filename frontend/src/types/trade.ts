@@ -101,6 +101,7 @@ export interface TradeCreate {
   source_trade_id?: string | null
   review_id?: string | null
   leg?: string | null
+  portfolio_id?: number | null
   portfolio_name?: string | null
   counterparty_name?: string | null
   option_type?: string | null
@@ -145,6 +146,7 @@ export interface TradeUpdate {
   source_trade_id?: string | null
   review_id?: string | null
   leg?: string | null
+  portfolio_id?: number | null
   portfolio_name?: string | null
   counterparty_name?: string | null
   option_type?: string | null

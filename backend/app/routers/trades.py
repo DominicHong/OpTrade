@@ -5,10 +5,35 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from app.database import get_session
+from app.models.portfolio import Portfolio
 from app.models.trade import Trade
 from app.schemas.trade import TradeCreate, TradeFilterParams, TradeListResponse, TradeRead, TradeUpdate
 
 router = APIRouter(prefix="/api/v1/trades", tags=["trades"])
+
+
+def _resolve_portfolio(portfolio_id: int | None, portfolio_name: str | None, session: Session) -> tuple[int | None, str | None]:
+    """Resolve portfolio_name to portfolio_id. Errors if name given but not found.
+    Returns (portfolio_id, portfolio_name) tuple.
+    """
+    if portfolio_id is not None:
+        portfolio = session.get(Portfolio, portfolio_id)
+        if not portfolio:
+            raise HTTPException(status_code=404, detail=f"Portfolio with id {portfolio_id} not found")
+        return portfolio.id, portfolio.name
+
+    if portfolio_name:
+        portfolio = session.exec(
+            select(Portfolio).where(Portfolio.name == portfolio_name)
+        ).first()
+        if not portfolio:
+            raise HTTPException(
+                status_code=404,
+                detail=f"投组 '{portfolio_name}' 不存在，请先在投组管理页面创建该投组",
+            )
+        return portfolio.id, portfolio.name
+
+    return None, None
 
 
 class BatchDeleteRequest(BaseModel):
@@ -159,7 +184,14 @@ def create_trade(
     if existing:
         raise HTTPException(status_code=409, detail=f"Trade with trade_id '{data.trade_id}' already exists")
 
-    trade = Trade(**data.model_dump())
+    # Resolve portfolio_name → portfolio_id (no auto-create from this endpoint)
+    pid, pname = _resolve_portfolio(data.portfolio_id, data.portfolio_name, session)
+
+    trade_data = data.model_dump()
+    trade_data["portfolio_id"] = pid
+    trade_data["portfolio_name"] = pname
+
+    trade = Trade(**trade_data)
     session.add(trade)
     session.commit()
     session.refresh(trade)
@@ -178,6 +210,15 @@ def update_trade(
         raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
     update_data = update.model_dump(exclude_unset=True)
+
+    # Resolve portfolio_name → portfolio_id if provided
+    pid = update_data.get("portfolio_id")
+    pname = update_data.get("portfolio_name")
+    if "portfolio_id" in update_data or "portfolio_name" in update_data:
+        resolved_id, resolved_name = _resolve_portfolio(pid, pname, session)
+        update_data["portfolio_id"] = resolved_id
+        update_data["portfolio_name"] = resolved_name
+
     for key, value in update_data.items():
         setattr(trade, key, value)
 

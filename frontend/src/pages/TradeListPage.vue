@@ -8,6 +8,7 @@ import DataTable from '@/components/shared/DataTable.vue'
 import SearchInput from '@/components/shared/SearchInput.vue'
 import NumberDisplay from '@/components/shared/NumberDisplay.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
+import PortfolioAutocomplete from '@/components/trade/PortfolioAutocomplete.vue'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { Trade, TradeCreate, TradeUpdate } from '@/types/trade'
 import type { ImportConfirmResponse } from '@/types/api'
@@ -57,6 +58,7 @@ const emptyForm: TradeCreate = {
 
 const form = ref<TradeCreate | TradeUpdate>({ ...emptyForm })
 const editingTradeId = ref<number | null>(null)
+const formPortfolioId = ref<number | null>(null)
 
 /** Determine which notional to use for premium calc based on premium_type + premium_currency + ccy_pair. */
 function getNotionalForCalc(): number | null {
@@ -244,6 +246,7 @@ function openCreateModal() {
   modalMode.value = 'create'
   form.value = { ...emptyForm }
   editingTradeId.value = null
+  formPortfolioId.value = null
   formError.value = null
   showModal.value = true
 }
@@ -251,6 +254,7 @@ function openCreateModal() {
 function openEditModal(trade: Trade) {
   modalMode.value = 'edit'
   editingTradeId.value = trade.id
+  formPortfolioId.value = trade.portfolio_id
   form.value = {
     trade_id: trade.trade_id,
     ccy_pair: trade.ccy_pair,
@@ -281,7 +285,7 @@ function openEditModal(trade: Trade) {
 async function submitForm() {
   formLoading.value = true
   formError.value = null
-  const payload = { ...form.value }
+  const payload = { ...form.value, portfolio_id: formPortfolioId.value }
   if (payload.volatility != null) {
     payload.volatility = payload.volatility / 100
   }
@@ -527,7 +531,12 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
               </div>
               <div class="form-field">
                 <label>投组</label>
-                <input v-model="form.portfolio_name" placeholder="投资组合名称" />
+                <PortfolioAutocomplete
+                  :model-value="form.portfolio_name ?? ''"
+                  placeholder="搜索并选择投组..."
+                  @update:model-value="(v: string | null) => form.portfolio_name = v"
+                  @update:portfolio-id="(v: number | null) => formPortfolioId = v"
+                />
               </div>
               <div class="form-field">
                 <label>期权费类型</label>

@@ -16,6 +16,11 @@ export async function createPortfolio(payload: PortfolioCreate): Promise<Portfol
   return data
 }
 
+export async function updatePortfolio(id: number, payload: { name?: string | null; description?: string | null }): Promise<Portfolio> {
+  const { data } = await apiClient.put(`/portfolios/${id}`, payload)
+  return data
+}
+
 export async function deletePortfolio(id: number): Promise<void> {
   await apiClient.delete(`/portfolios/${id}`)
 }

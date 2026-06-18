@@ -20,6 +20,11 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/portfolios',
+      name: 'portfolios',
+      component: () => import('@/pages/PortfolioManagementPage.vue'),
+    },
+    {
       path: '/portfolio',
       name: 'portfolio',
       component: () => import('@/pages/PortfolioAnalysisPage.vue'),

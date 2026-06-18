@@ -97,6 +97,7 @@ class TradeCreate(BaseModel):
     source_trade_id: str | None = None
     review_id: str | None = None
     leg: str | None = None
+    portfolio_id: int | None = None
     portfolio_name: str | None = None
     counterparty_name: str | None = None
 
@@ -175,6 +176,7 @@ class TradeUpdate(BaseModel):
     source_trade_id: str | None = None
     review_id: str | None = None
     leg: str | None = None
+    portfolio_id: int | None = None
     portfolio_name: str | None = None
     counterparty_name: str | None = None
 

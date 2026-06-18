@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Portfolio } from '@/types/portfolio'
-import { fetchPortfolios, fetchPortfolio, createPortfolio, deletePortfolio } from '@/api/portfolios'
+import { fetchPortfolios, fetchPortfolio, createPortfolio, updatePortfolio, deletePortfolio } from '@/api/portfolios'
 
 export const usePortfolioStore = defineStore('portfolio', () => {
   const portfolios = ref<Portfolio[]>([])
@@ -31,6 +31,14 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     return p
   }
 
+  async function savePortfolio(id: number, data: { name?: string | null; description?: string | null }) {
+    const updated = await updatePortfolio(id, data)
+    const idx = portfolios.value.findIndex(p => p.id === id)
+    if (idx !== -1) portfolios.value[idx] = updated
+    if (currentPortfolio.value?.id === id) currentPortfolio.value = updated
+    return updated
+  }
+
   async function removePortfolio(id: number) {
     await deletePortfolio(id)
     portfolios.value = portfolios.value.filter(p => p.id !== id)
@@ -39,6 +47,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
 
   return {
     portfolios, currentPortfolio, loading, error,
-    loadPortfolios, loadPortfolio, addPortfolio, removePortfolio,
+    loadPortfolios, loadPortfolio, addPortfolio, savePortfolio, removePortfolio,
   }
 })
