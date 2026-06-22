@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from app.models.trade import Trade
+from app.models import Trade
 
 
 class TestTradeRoutes:

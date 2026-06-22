@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models.market_data import MarketDataSnapshot
+from app.models import MarketDataSnapshot
 
 router = APIRouter(prefix="/api/v1/market-data", tags=["market-data"])
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from sqlmodel import Session, select
 
-from app.models.import_log import ImportLog
+from app.models import ImportLog
 from app.utils.column_mapping import (
     BOOL_FIELDS,
     CSV_TO_TRADE_FIELD,
@@ -131,9 +131,7 @@ class ImportService:
         Persist validated rows to the database.
         Creates Portfolio and Counterparty records as needed.
         """
-        from app.models.counterparty import Counterparty
-        from app.models.portfolio import Portfolio
-        from app.models.trade import Trade
+        from app.models import Counterparty, Portfolio, Trade
 
         imported = 0
         skipped = 0

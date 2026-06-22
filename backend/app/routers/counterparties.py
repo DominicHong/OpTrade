@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models.counterparty import Counterparty
+from app.models import Counterparty
 
 router = APIRouter(prefix="/api/v1/counterparties", tags=["counterparties"])
 

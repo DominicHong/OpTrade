@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models.import_log import ImportErrorRecord, ImportLog
+from app.models import ImportErrorRecord, ImportLog
 from app.schemas.import_ import (
     ImportConfirmResponse,
     ImportHistoryItem,

@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from app.database import get_session
-from app.models.calculation import CalculationResult
-from app.models.trade import Trade
+from app.models import CalculationResult, Trade
 from app.schemas.calculation import GreeksRequest, GreeksResult, PricingRequest, PricingResult
 from app.services.greeks_service import greeks_service
 from app.services.pricing_service import pricing_service

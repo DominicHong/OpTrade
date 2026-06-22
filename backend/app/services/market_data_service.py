@@ -7,7 +7,7 @@ These feed into the Greeks and Pricing services.
 
 from sqlmodel import Session, select
 
-from app.models.market_data import MarketDataSnapshot
+from app.models import MarketDataSnapshot
 
 
 class MarketDataService:

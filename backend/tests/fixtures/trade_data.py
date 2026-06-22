@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from app.models.trade import Trade
+from app.models import Trade
 
 
 def create_sample_trade(**overrides) -> Trade:

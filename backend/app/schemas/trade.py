@@ -1,15 +1,13 @@
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class TradeRead(BaseModel):
-    """Schema for reading a Trade (API response)."""
+class TradeBase(BaseModel):
+    """Common fields shared across trade schemas."""
 
-    id: int
-    trade_id: str
+    # Core identifiers
     source_trade_id: str | None = None
     review_id: str | None = None
     leg: str | None = None
@@ -37,7 +35,7 @@ class TradeRead(BaseModel):
     premium_payment_date: date | None = None
 
     # Premium
-    premium_type: str | None = None
+    premium_type: Literal["Pips", "%"] | None = None
     premium_rate: float | None = None
     premium_amount: float | None = None
     premium_currency: str | None = None
@@ -73,12 +71,40 @@ class TradeRead(BaseModel):
     source: str | None = None
     comments: str | None = None
 
-    # Timestamps
-    trade_date: date | None = None
+    @field_validator("premium_currency")
+    @classmethod
+    def validate_premium_currency(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return v
+        ccy_pair = info.data.get("ccy_pair")
+        if ccy_pair:
+            parts = ccy_pair.split("/")
+            if len(parts) == 2 and v not in parts:
+                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
+        return v
+
+
+class TradeRead(TradeBase):
+    """Schema for reading a Trade (API response)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    trade_id: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    model_config = {"from_attributes": True}
+
+class TradeCreate(TradeBase):
+    """Schema for creating a new trade manually."""
+
+    trade_id: str
+
+
+class TradeUpdate(TradeBase):
+    """Fields that can be updated on a trade."""
+
+    trade_id: str | None = None
 
 
 class TradeListResponse(BaseModel):
@@ -88,164 +114,6 @@ class TradeListResponse(BaseModel):
     total: int
     page: int
     page_size: int
-
-
-class TradeCreate(BaseModel):
-    """Schema for creating a new trade manually."""
-
-    trade_id: str
-    source_trade_id: str | None = None
-    review_id: str | None = None
-    leg: str | None = None
-    portfolio_id: int | None = None
-    portfolio_name: str | None = None
-    counterparty_name: str | None = None
-
-    # Option specs
-    option_type: str | None = None
-    trade_type: str | None = None
-    direction: str | None = None
-    strike: float | None = None
-    ccy_pair: str | None = None
-    trade_currency: str | None = None
-
-    # Notional
-    notional1: float | None = None
-    notional2: float | None = None
-
-    # Dates
-    trade_date: date | None = None
-    expiry_date: date | None = None
-    delivery_date: date | None = None
-    premium_payment_date: date | None = None
-
-    # Premium
-    premium_type: Literal["Pips", "%"] | None = None
-    premium_rate: float | None = None
-    premium_amount: float | None = None
-    premium_currency: str | None = None
-
-    # Market data
-    spot_rate: float | None = None
-    volatility: float | None = None
-
-    # Barrier
-    barrier_type: str | None = None
-    barrier_direction: str | None = None
-    barrier_level: float | None = None
-
-    # Asian
-    asian_sub_type: str | None = None
-    averaging_method: str | None = None
-
-    # Status
-    exercise_status: str | None = None
-    delivery_status: str | None = None
-    effective_status: str | None = None
-    allocation_status: str | None = None
-
-    # Venue
-    venue: str | None = None
-    clearing_method: str | None = None
-
-    # Meta
-    tenor: str | None = None
-    event_type: str | None = None
-    trade_purpose: str | None = None
-    operator: str | None = None
-    source: str | None = None
-    comments: str | None = None
-
-    @field_validator("premium_currency")
-    @classmethod
-    def validate_premium_currency(cls, v: str | None, info) -> str | None:
-        if v is None:
-            return v
-        ccy_pair = info.data.get("ccy_pair")
-        if ccy_pair:
-            parts = ccy_pair.split("/")
-            if len(parts) == 2 and v not in parts:
-                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
-        return v
-
-
-class TradeUpdate(BaseModel):
-    """Fields that can be updated on a trade."""
-
-    trade_id: str | None = None
-    source_trade_id: str | None = None
-    review_id: str | None = None
-    leg: str | None = None
-    portfolio_id: int | None = None
-    portfolio_name: str | None = None
-    counterparty_name: str | None = None
-
-    # Option specs
-    option_type: str | None = None
-    trade_type: str | None = None
-    direction: str | None = None
-    strike: float | None = None
-    ccy_pair: str | None = None
-    trade_currency: str | None = None
-
-    # Notional
-    notional1: float | None = None
-    notional2: float | None = None
-
-    # Dates
-    trade_date: date | None = None
-    expiry_date: date | None = None
-    delivery_date: date | None = None
-    premium_payment_date: date | None = None
-
-    # Premium
-    premium_type: Literal["Pips", "%"] | None = None
-    premium_rate: float | None = None
-    premium_amount: float | None = None
-    premium_currency: str | None = None
-
-    # Market data
-    spot_rate: float | None = None
-    volatility: float | None = None
-
-    # Barrier
-    barrier_type: str | None = None
-    barrier_direction: str | None = None
-    barrier_level: float | None = None
-
-    # Asian
-    asian_sub_type: str | None = None
-    averaging_method: str | None = None
-
-    # Status
-    exercise_status: str | None = None
-    delivery_status: str | None = None
-    effective_status: str | None = None
-    allocation_status: str | None = None
-
-    # Venue
-    venue: str | None = None
-    clearing_method: str | None = None
-
-    # Meta
-    tenor: str | None = None
-    event_type: str | None = None
-    trade_purpose: str | None = None
-    operator: str | None = None
-    source: str | None = None
-    comments: str | None = None
-
-    @field_validator("premium_currency")
-    @classmethod
-    def validate_premium_currency(cls, v: str | None, info) -> str | None:
-        if v is None:
-            return v
-        ccy_pair = info.data.get("ccy_pair")
-        if ccy_pair:
-            parts = ccy_pair.split("/")
-            if len(parts) == 2 and v not in parts:
-                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
-        return v
 
 
 class TradeFilterParams(BaseModel):

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models.trade import Trade
+from app.models import Counterparty, Portfolio, Trade
 from app.schemas.dashboard import DashboardSummary
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -13,8 +13,6 @@ def get_dashboard_summary(
     session: Session = Depends(get_session),
 ) -> DashboardSummary:
     """Get aggregate summary for the dashboard."""
-    from app.models.portfolio import Portfolio
-    from app.models.counterparty import Counterparty
 
     total_trades = session.exec(select(func.count(Trade.id))).one()
     total_portfolios = session.exec(select(func.count(Portfolio.id))).one()

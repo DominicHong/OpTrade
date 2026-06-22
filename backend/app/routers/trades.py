@@ -5,8 +5,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models.portfolio import Portfolio
-from app.models.trade import Trade
+from app.models import Portfolio, Trade
 from app.schemas.trade import TradeCreate, TradeFilterParams, TradeListResponse, TradeRead, TradeUpdate
 
 router = APIRouter(prefix="/api/v1/trades", tags=["trades"])
