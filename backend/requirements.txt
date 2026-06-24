@@ -7,3 +7,4 @@ xlrd>=2.0.2
 pywebview>=6.2
 QuantLib>=1.42.1
 python-multipart>=0.0.32
+playwright>=1.57.0
