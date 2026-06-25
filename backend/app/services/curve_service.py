@@ -6,11 +6,13 @@ delegates crawling to the appropriate datasource service.
 
 from __future__ import annotations
 
+import csv
 import logging
 from datetime import date, datetime
+from io import StringIO
 
 from fastapi import HTTPException
-from sqlalchemy import case
+from sqlalchemy import Select, case
 from sqlmodel import Session, col, func, select
 
 from app.models.curve import CurveDefinition, FxImpliedRate
@@ -64,45 +66,17 @@ class CurveService:
         params: FxImpliedRateFilterParams,
     ) -> FxImpliedRateListResponse:
         """Paginated / filtered query of FX implied rate data."""
-        base = select(FxImpliedRate)
-
-        conditions: list = []
-        if params.date_from:
-            conditions.append(FxImpliedRate.curve_date >= params.date_from)
-        if params.date_to:
-            conditions.append(FxImpliedRate.curve_date <= params.date_to)
-        if params.currency:
-            conditions.append(
-                FxImpliedRate.foreign_currency == params.currency.upper(),
-            )
-        if params.tenor:
-            conditions.append(FxImpliedRate.tenor == params.tenor)
-
-        if conditions:
-            base = base.where(*conditions)
+        base = _build_fx_rate_query(params)
 
         # Total count.
         total = session.exec(
             select(func.count()).select_from(base.subquery())
         ).one()
 
-        # Sorting.
-        sort_column = _get_sort_column(params.sort_by)
-        primary_order = (
-            sort_column.desc()
-            if params.sort_order.lower() == "desc"
-            else sort_column.asc()
-        )
-        order_terms: list = [primary_order]
-        if params.sort_by == "curve_date":
-            order_terms.extend([_usd_first_order(), FxImpliedRate.tenor])
-
         # Paginated rows.
         offset = (params.page - 1) * params.page_size
         rows = session.exec(
-            base.order_by(*order_terms)
-            .offset(offset)
-            .limit(params.page_size)
+            base.offset(offset).limit(params.page_size)
         ).all()
 
         return FxImpliedRateListResponse(
@@ -111,6 +85,34 @@ class CurveService:
             page=params.page,
             page_size=params.page_size,
         )
+
+    def export_fx_rates_csv(
+        self,
+        session: Session,
+        params: FxImpliedRateFilterParams,
+    ) -> str:
+        """Export all matching FX implied rate rows as CSV text."""
+        base = _build_fx_rate_query(params)
+        rows = session.exec(base).all()
+
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "日期", "外币", "期限", "隐含利率(%)", "人民币利率(%)",
+            "即期汇率", "掉期点(Pips)", "来源",
+        ])
+        for r in rows:
+            writer.writerow([
+                r.curve_date,
+                r.foreign_currency,
+                r.tenor,
+                r.foreign_implied_rate,
+                r.cny_risk_free_rate,
+                r.spot_rate,
+                r.swap_points,
+                r.source,
+            ])
+        return output.getvalue()
 
     def get_coverage(self, session: Session) -> CurveCoverageSummary:
         """Return data-coverage statistics for the FX implied rate curve."""
@@ -258,6 +260,40 @@ def _tenor_sort_key(t: str) -> tuple[int, float]:
 def _sort_tenors(tenors: list[str]) -> list[str]:
     """Sort tenor labels in logical duration order."""
     return sorted(tenors, key=_tenor_sort_key)
+
+
+def _build_fx_rate_query(
+    params: FxImpliedRateFilterParams,
+) -> Select[tuple[FxImpliedRate, ...]]:
+    """Build a filtered and sorted select statement for FxImpliedRate."""
+    base = select(FxImpliedRate)
+
+    conditions: list = []
+    if params.date_from:
+        conditions.append(FxImpliedRate.curve_date >= params.date_from)
+    if params.date_to:
+        conditions.append(FxImpliedRate.curve_date <= params.date_to)
+    if params.currency:
+        conditions.append(
+            FxImpliedRate.foreign_currency == params.currency.upper(),
+        )
+    if params.tenor:
+        conditions.append(FxImpliedRate.tenor == params.tenor)
+
+    if conditions:
+        base = base.where(*conditions)
+
+    sort_column = _get_sort_column(params.sort_by)
+    primary_order = (
+        sort_column.desc()
+        if params.sort_order.lower() == "desc"
+        else sort_column.asc()
+    )
+    order_terms: list = [primary_order]
+    if params.sort_by == "curve_date":
+        order_terms.extend([_usd_first_order(), FxImpliedRate.tenor])
+
+    return base.order_by(*order_terms)
 
 
 def _get_sort_column(sort_by: str):

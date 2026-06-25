@@ -1,6 +1,7 @@
 """Curve management API routes."""
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.database import get_session
@@ -44,6 +45,23 @@ def list_fx_implied_rates(
 ) -> FxImpliedRateListResponse:
     """Paginated query of FX implied rate data with optional filters."""
     return service.query_fx_rates(session, params)
+
+
+@router.get("/fx-implied-rates/export")
+def export_fx_implied_rates(
+    params: FxImpliedRateFilterParams = Depends(),
+    session: Session = Depends(get_session),
+    service: CurveService = Depends(get_curve_service),
+):
+    """Export all matching FX implied rate data as a CSV file."""
+    csv_text = service.export_fx_rates_csv(session, params)
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={
+            "Content-Disposition": "attachment; filename=fx_implied_rates.csv",
+        },
+    )
 
 
 @router.get("/fx-implied-rates/coverage", response_model=CurveCoverageSummary)

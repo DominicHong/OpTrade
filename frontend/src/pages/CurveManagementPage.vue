@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useCurveStore } from '@/stores/curveStore'
 import { useUiStore } from '@/stores/uiStore'
 import DataTable from '@/components/shared/DataTable.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
+import { exportFxImpliedRates } from '@/api/curves'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { FxImpliedRate } from '@/types/curve'
 
@@ -42,7 +43,7 @@ function resetFilters() {
   filterDateTo.value = ''
   filterCurrency.value = ''
   filterTenor.value = ''
-  store.setFilters({ page: 1, page_size: 50 })
+  store.setFilters({ page: 1, page_size: 10 })
 }
 
 async function handleRefresh() {
@@ -56,10 +57,50 @@ async function handleRefresh() {
   }
 }
 
+async function handleExport() {
+  try {
+    const blob = await exportFxImpliedRates({
+      date_from: filterDateFrom.value || undefined,
+      date_to: filterDateTo.value || undefined,
+      currency: filterCurrency.value || undefined,
+      tenor: filterTenor.value || undefined,
+      sort_by: store.filters.sort_by,
+      sort_order: store.filters.sort_order,
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `fx_implied_rates_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ui.addNotification('success', '曲线数据导出成功')
+  } catch (e) {
+    ui.addNotification('error', e instanceof Error ? e.message : '导出失败')
+  }
+}
+
 function handlePageChange(page: number) {
   store.goToPage(page)
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
+
+// ---- pagination ----
+const visiblePages = computed(() => {
+  const total = store.totalPages
+  const current = store.currentPage
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total]
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total]
+})
 
 // ---- init ----
 onMounted(() => {
@@ -166,8 +207,15 @@ onMounted(() => {
           </select>
         </div>
         <div class="filter-actions">
-          <button class="btn btn-secondary" @click="applyFilters">查询</button>
-          <button class="btn btn-ghost" @click="resetFilters">重置</button>
+          <button class="btn btn-primary" @click="applyFilters">
+            <span class="btn-icon">🔍</span>查询
+          </button>
+          <button class="btn btn-secondary" @click="resetFilters">
+            <span class="btn-icon">↺</span>重置
+          </button>
+          <button class="btn btn-secondary" @click="handleExport">
+            <span class="btn-icon">⬇</span>导出 CSV
+          </button>
         </div>
       </div>
     </section>
@@ -228,7 +276,7 @@ onMounted(() => {
         <!-- Pagination -->
         <div v-if="store.total > 0" class="pagination">
           <span class="page-info">
-            共 {{ store.total }} 条，
+            共 {{ store.total.toLocaleString() }} 条，
             第 {{ store.currentPage }} / {{ store.totalPages }} 页
           </span>
           <div class="page-controls">
@@ -239,15 +287,17 @@ onMounted(() => {
             >
               上一页
             </button>
-            <button
-              v-for="p in store.totalPages"
-              :key="p"
-              class="btn btn-sm"
-              :class="{ active: p === store.currentPage }"
-              @click="handlePageChange(p)"
-            >
-              {{ p }}
-            </button>
+            <template v-for="(p, idx) in visiblePages" :key="idx">
+              <span v-if="p === '...'" class="page-ellipsis">…</span>
+              <button
+                v-else
+                class="btn btn-sm"
+                :class="{ active: p === store.currentPage }"
+                @click="handlePageChange(p as number)"
+              >
+                {{ p }}
+              </button>
+            </template>
             <button
               class="btn btn-sm"
               :disabled="store.currentPage >= store.totalPages"
@@ -354,9 +404,24 @@ onMounted(() => {
 }
 .filter-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.6rem;
   align-items: flex-end;
   padding-bottom: 1px;
+}
+.filter-actions .btn {
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.filter-actions .btn-secondary {
+  background: var(--color-bg-secondary);
+}
+.filter-actions .btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+.filter-actions .btn-icon {
+  font-size: 0.85rem;
+  margin-right: 0.25rem;
 }
 
 /* ---- Content ---- */
@@ -452,15 +517,39 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   margin-top: 1rem;
   padding: 0.5rem 0;
+  flex-wrap: wrap;
 }
 .page-info {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 .page-controls {
   display: flex;
   gap: 4px;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: 2px;
+}
+.page-ellipsis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  user-select: none;
+}
+@media (max-width: 640px) {
+  .pagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .page-controls {
+    width: 100%;
+  }
 }
 </style>

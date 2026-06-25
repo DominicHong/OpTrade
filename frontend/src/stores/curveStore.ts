@@ -27,7 +27,7 @@ export const useCurveStore = defineStore('curve', () => {
   // current filter state
   const filters = ref<FxImpliedRateFilterParams>({
     page: 1,
-    page_size: 50,
+    page_size: 10,
     sort_by: 'curve_date',
     sort_order: 'desc',
   })

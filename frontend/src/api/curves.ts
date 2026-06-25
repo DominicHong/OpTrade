@@ -20,6 +20,14 @@ export async function fetchFxImpliedRates(
   return data
 }
 
+export async function exportFxImpliedRates(params: FxImpliedRateFilterParams): Promise<Blob> {
+  const { data } = await apiClient.get('/curves/fx-implied-rates/export', {
+    params,
+    responseType: 'blob',
+  })
+  return data
+}
+
 export async function fetchCurveCoverage(): Promise<CurveCoverageSummary> {
   const { data } = await apiClient.get('/curves/fx-implied-rates/coverage')
   return data
