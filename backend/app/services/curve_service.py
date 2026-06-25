@@ -230,9 +230,181 @@ class CurveService:
         )
 
 
-# ------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Curve parameter resolution for Greeks
+    # ------------------------------------------------------------------
+
+    def _find_nearest_curve_date(
+        self,
+        session: Session,
+        valuation_date: date,
+        foreign_currency: str,
+    ) -> date | None:
+        """Find the nearest ``curve_date <= valuation_date`` for a currency.
+
+        Falls back to the earliest available date if no data exists on or
+        before *valuation_date*.  Returns ``None`` when no data exists for
+        that currency at all.
+        """
+        # Prefer exact or <= valuation_date
+        row = session.exec(
+            select(func.max(FxImpliedRate.curve_date)).where(
+                FxImpliedRate.curve_date <= valuation_date,
+                FxImpliedRate.foreign_currency == foreign_currency,
+            )
+        ).first()
+        if row is not None:
+            return row
+
+        # Fallback: earliest date for this currency
+        row = session.exec(
+            select(func.min(FxImpliedRate.curve_date)).where(
+                FxImpliedRate.foreign_currency == foreign_currency,
+            )
+        ).first()
+        return row
+
+    def _get_curve_data_for_date(
+        self,
+        session: Session,
+        curve_date: date,
+        foreign_currency: str,
+    ) -> tuple[list[str], list[float | None], list[float | None], float | None]:
+        """Return curve data for a specific date and currency.
+
+        Returns:
+            ``(tenors, foreign_implied_rates, cny_risk_free_rates, spot_rate)``.
+            Tenors are sorted by year-fraction ascending.  *spot_rate* is
+            taken from the first row (should be identical across tenors for
+            a given date).
+        """
+        rows = session.exec(
+            select(FxImpliedRate).where(
+                FxImpliedRate.curve_date == curve_date,
+                FxImpliedRate.foreign_currency == foreign_currency,
+            )
+        ).all()
+
+        if not rows:
+            return ([], [], [], None)
+
+        # Sort by year-fraction
+        from app.utils.curve_helpers import tenor_to_years
+        rows_sorted = sorted(rows, key=lambda r: tenor_to_years(r.tenor))
+
+        tenors = [r.tenor for r in rows_sorted]
+        foreign_rates = [r.foreign_implied_rate for r in rows_sorted]
+        cny_rates = [r.cny_risk_free_rate for r in rows_sorted]
+        # Spot rate should be the same for all tenors on a given date
+        spot = rows[0].spot_rate
+
+        return (tenors, foreign_rates, cny_rates, spot)
+
+    def _get_historical_spot_rates(
+        self,
+        session: Session,
+        valuation_date: date,
+        foreign_currency: str,
+        lookback: int = 500,
+    ) -> list[float]:
+        """Return historical spot rates in chronological order (oldest first).
+
+        Used for calculating historical volatility.  Selects distinct
+        ``(curve_date, spot_rate)`` pairs for the given currency, up to
+        *lookback* days before *valuation_date*.
+        """
+        rows = session.exec(
+            select(
+                FxImpliedRate.curve_date,
+                FxImpliedRate.spot_rate,
+            )
+            .where(
+                FxImpliedRate.curve_date <= valuation_date,
+                FxImpliedRate.foreign_currency == foreign_currency,
+            )
+            .distinct()
+            .order_by(FxImpliedRate.curve_date.asc())
+        ).all()
+
+        # Take one spot rate per date (use the first non-None value)
+        seen: set[date] = set()
+        rates: list[float] = []
+        for curve_date, spot in rows:
+            if curve_date in seen or spot is None:
+                continue
+            seen.add(curve_date)
+            rates.append(spot)
+
+        # Return last *lookback* entries (most recent data)
+        if len(rates) > lookback:
+            rates = rates[-lookback:]
+
+        return rates
+
+    def resolve_valuation_params(
+        self,
+        session: Session,
+        valuation_date: date,
+        foreign_currency: str,
+        remaining_maturity_years: float,
+    ) -> dict | None:
+        """Resolve all valuation parameters from curve data.
+
+        Args:
+            session: Database session.
+            valuation_date: Target valuation date.
+            foreign_currency: Foreign currency code (e.g. ``"USD"``).
+            remaining_maturity_years: Option remaining maturity in years,
+                used for rate interpolation.
+
+        Returns:
+            ``{"rf_rate_base", "rf_rate_quote", "spot_rate", "volatility",
+            "curve_date"}`` or ``None`` if no curve data is available.
+            All rate values are **decimals** (divided by 100 from the stored
+            percentage values).
+        """
+        from app.utils.curve_helpers import (
+            interpolate_rate,
+            calc_historical_volatility,
+        )
+
+        curve_date = self._find_nearest_curve_date(
+            session, valuation_date, foreign_currency
+        )
+        if curve_date is None:
+            return None
+
+        tenors, foreign_rates, cny_rates, spot = self._get_curve_data_for_date(
+            session, curve_date, foreign_currency
+        )
+        if not tenors:
+            return None
+
+        # Interpolate rates at remaining_maturity_years.
+        # Stored as percentages (e.g. 4.5 = 4.5 %) → divide by 100 for decimal.
+        raw_foreign = interpolate_rate(remaining_maturity_years, tenors, foreign_rates)
+        raw_cny = interpolate_rate(remaining_maturity_years, tenors, cny_rates)
+
+        rf_rate_base = raw_foreign / 100.0 if raw_foreign is not None else None
+        rf_rate_quote = raw_cny / 100.0 if raw_cny is not None else None
+
+        # Historical volatility
+        spot_history = self._get_historical_spot_rates(
+            session, valuation_date, foreign_currency
+        )
+        volatility = calc_historical_volatility(spot_history)
+
+        return {
+            "rf_rate_base": rf_rate_base,
+            "rf_rate_quote": rf_rate_quote,
+            "spot_rate": spot,
+            "volatility": volatility,
+            "curve_date": curve_date,
+        }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
 # Mapping from tenor string → sortable tuple of (unit_rank, count).
 _TENOR_ORDER: dict[str, tuple[int, int]] = {

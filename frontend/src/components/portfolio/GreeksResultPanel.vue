@@ -31,8 +31,8 @@ function fmt(val: number | null | undefined, decimals = 4): string {
     </div>
     <div class="params-used">
       <span>
-        参数: base r = {{ (result.rf_rate_base * 100).toFixed(2) }}%,
-        quote r = {{ (result.rf_rate_quote * 100).toFixed(2) }}%,
+        参数: base r = {{ result.rf_rate_base != null ? (result.rf_rate_base * 100).toFixed(2) + '%' : '—' }},
+        quote r = {{ result.rf_rate_quote != null ? (result.rf_rate_quote * 100).toFixed(2) + '%' : '—' }},
         vol = {{ result.volatility_used != null ? (result.volatility_used * 100).toFixed(2) + '%' : '交易自带' }},
         spot = {{ result.spot_used ?? '交易自带' }}
       </span>

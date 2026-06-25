@@ -41,8 +41,13 @@ _ID_SWAP = "iuir-curv-his-bp"
 # ---------------------------------------------------------------------------
 
 
-async def launch_browser(headless: bool = True) -> Browser:
-    """Launch MS Edge (or Chromium fallback) via Playwright."""
+async def launch_browser(headless: bool = True) -> tuple[Browser, "async_playwright"]:
+    """Launch MS Edge (or Chromium fallback) via Playwright.
+
+    Returns a ``(browser, playwright)`` tuple.  The caller **must** call
+    ``await browser.close()`` followed by ``await playwright.stop()`` to
+    release all subprocess resources cleanly.
+    """
     pw = await async_playwright().start()
     try:
         browser = await pw.chromium.launch(
@@ -53,7 +58,7 @@ async def launch_browser(headless: bool = True) -> Browser:
     except Exception:
         logger.warning("msedge channel failed – falling back to bundled chromium")
         browser = await pw.chromium.launch(headless=headless)
-    return browser
+    return browser, pw
 
 
 # ---------------------------------------------------------------------------

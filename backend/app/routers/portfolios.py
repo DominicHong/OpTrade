@@ -7,6 +7,8 @@ from app.schemas.portfolio import (
     PortfolioGreeksRequest,
     PortfolioGreeksResponse,
     PortfolioRead,
+    PortfolioResolveRequest,
+    PortfolioResolveResponse,
     PortfolioUpdate,
 )
 from app.services.portfolio_service import PortfolioService, get_portfolio_service
@@ -71,6 +73,24 @@ def delete_portfolio(
     return {"status": "deleted", "portfolio_id": str(portfolio_id)}
 
 
+@router.post("/{portfolio_id}/resolve-params", response_model=PortfolioResolveResponse)
+def resolve_portfolio_params(
+    portfolio_id: int,
+    request: PortfolioResolveRequest,
+    session: Session = Depends(get_session),
+    service: PortfolioService = Depends(_service),
+) -> PortfolioResolveResponse:
+    """Resolve curve-based valuation parameters for every trade in a portfolio.
+
+    For each trade, interpolates risk-free rates from the FX implied rate
+    curve at the trade's remaining maturity, looks up the spot rate, and
+    computes historical volatility from the past 250 trading days.
+
+    Only applies to CNY-quoted currency pairs (USD/CNY, EUR/CNY, etc.).
+    """
+    return service.resolve_portfolio_params(session, portfolio_id, request)
+
+
 @router.post("/{portfolio_id}/greeks", response_model=PortfolioGreeksResponse)
 def calculate_portfolio_greeks(
     portfolio_id: int,
@@ -78,5 +98,10 @@ def calculate_portfolio_greeks(
     session: Session = Depends(get_session),
     service: PortfolioService = Depends(_service),
 ) -> PortfolioGreeksResponse:
-    """Calculate aggregated Greeks (Delta, Gamma) for all trades in a portfolio."""
+    """Calculate aggregated Greeks (Delta, Gamma, NPV) for all trades in a portfolio.
+
+    When ``curve_type`` is ``"fx_implied_rate"``, per-trade rates are
+    interpolated from the FX implied rate curve.  User overrides in
+    ``trade_params`` take priority over curve-derived values.
+    """
     return service.calculate_greeks(session, portfolio_id, request)

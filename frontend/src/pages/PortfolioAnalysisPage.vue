@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import { useCurveStore } from '@/stores/curveStore'
 import { useGreeksCalculation } from '@/composables/useGreeksCalculation'
 import PortfolioSelector from '@/components/portfolio/PortfolioSelector.vue'
 import GreeksParamsForm from '@/components/portfolio/GreeksParamsForm.vue'
@@ -8,15 +9,39 @@ import GreeksResultPanel from '@/components/portfolio/GreeksResultPanel.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 
 const pfStore = usePortfolioStore()
-const { params, result, loading, error, calculate, resetResult } = useGreeksCalculation()
+const curveStore = useCurveStore()
+const {
+  valuationDate,
+  curveType,
+  tradeParams,
+  result,
+  loading,
+  resolving,
+  error,
+  resolveParams,
+  updateTradeParam,
+  calculate,
+  resetResult,
+  resetTradeParams,
+} = useGreeksCalculation()
 
 onMounted(async () => {
-  await pfStore.loadPortfolios()
+  await Promise.all([
+    pfStore.loadPortfolios(),
+    curveStore.init(),
+  ])
 })
 
+// Reset when portfolio changes
 watch(() => pfStore.currentPortfolio, () => {
   resetResult()
+  resetTradeParams()
 })
+
+async function onResolveParams() {
+  if (!pfStore.currentPortfolio) return
+  await resolveParams(pfStore.currentPortfolio.id)
+}
 
 async function onCalculate() {
   if (!pfStore.currentPortfolio) return
@@ -28,7 +53,7 @@ async function onCalculate() {
   <div class="portfolio-page">
     <div class="page-header">
       <h1>组合分析</h1>
-      <p class="page-desc">选择投资组合以查看聚合风险指标和敞口分析</p>
+      <p class="page-desc">选择投资组合，使用参考曲线推导参数，查看聚合风险指标</p>
     </div>
 
     <div v-if="pfStore.loading"><LoadingSpinner message="加载组合..." /></div>
@@ -43,8 +68,16 @@ async function onCalculate() {
 
       <GreeksParamsForm
         v-if="pfStore.currentPortfolio"
-        :params="params"
+        :valuation-date="valuationDate"
+        :curve-type="curveType"
+        :trade-params="tradeParams"
+        :curve-definitions="curveStore.definitions"
         :loading="loading"
+        :resolving="resolving"
+        @update:valuation-date="valuationDate = $event"
+        @update:curve-type="curveType = $event"
+        @resolve-params="onResolveParams"
+        @update-trade-param="(tradeId: number, field: any, value: number | null) => updateTradeParam(tradeId, field, value)"
         @submit="onCalculate"
       />
 

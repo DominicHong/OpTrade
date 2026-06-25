@@ -190,7 +190,7 @@ class ChinaMoneyCrawler:
         self, date_from: date, date_to: date,
     ) -> bytes:
         """Automate the chinamoney Excel export with Playwright + Edge."""
-        pw_browser = await pw.launch_browser(headless=self._headless)
+        pw_browser, pw_instance = await pw.launch_browser(headless=self._headless)
 
         try:
             page = await pw_browser.new_page()
@@ -229,6 +229,7 @@ class ChinaMoneyCrawler:
 
         finally:
             await pw_browser.close()
+            await pw_instance.stop()
 
     # ---- XLSX parsing --------------------------------------------------
 

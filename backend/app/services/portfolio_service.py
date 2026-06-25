@@ -12,17 +12,42 @@ from app.schemas.portfolio import (
     PortfolioGreeksRequest,
     PortfolioGreeksResponse,
     PortfolioRead,
+    PortfolioResolveRequest,
+    PortfolioResolveResponse,
     PortfolioUpdate,
     TradeGreeksDetail,
+    TradeParamsOverride,
+    TradeParamsResolved,
 )
 from app.services.greeks_service import GreeksService
+from app.services.curve_service import CurveService, get_curve_service
+from app.utils.curve_helpers import extract_foreign_currency
+
+import logging
+
+logger = logging.getLogger("optrade.service.portfolio")
 
 
 class PortfolioService:
     """Portfolio-level operations and risk aggregation service."""
 
-    def __init__(self, greeks_service: GreeksService) -> None:
+    def __init__(
+        self,
+        greeks_service: GreeksService,
+        curve_service: CurveService | None = None,
+    ) -> None:
         self.greeks_service = greeks_service
+        self._curve_service = curve_service
+
+    @property
+    def curve_service(self) -> CurveService:
+        if self._curve_service is None:
+            self._curve_service = CurveService()
+        return self._curve_service
+
+    # ------------------------------------------------------------------
+    # CRUD helpers
+    # ------------------------------------------------------------------
 
     def _trade_count(self, session: Session, portfolio_id: int) -> int:
         return session.exec(
@@ -38,19 +63,16 @@ class PortfolioService:
         )
 
     def list_portfolios(self, session: Session) -> list[PortfolioRead]:
-        """List all portfolios with trade counts."""
         portfolios = session.exec(select(Portfolio)).all()
         return [self._to_read(session, p) for p in portfolios]
 
     def get_portfolio(self, session: Session, portfolio_id: int) -> PortfolioRead:
-        """Get a single portfolio by ID."""
         portfolio = session.get(Portfolio, portfolio_id)
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
         return self._to_read(session, portfolio)
 
     def create_portfolio(self, session: Session, data: PortfolioCreate) -> PortfolioRead:
-        """Create a new portfolio."""
         existing = session.exec(
             select(Portfolio).where(Portfolio.name == data.name)
         ).first()
@@ -68,7 +90,6 @@ class PortfolioService:
     def update_portfolio(
         self, session: Session, portfolio_id: int, data: PortfolioUpdate
     ) -> PortfolioRead:
-        """Update an existing portfolio."""
         portfolio = session.get(Portfolio, portfolio_id)
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -83,7 +104,6 @@ class PortfolioService:
         return self._to_read(session, portfolio)
 
     def delete_portfolio(self, session: Session, portfolio_id: int) -> None:
-        """Delete a portfolio (rejects if it has trades)."""
         portfolio = session.get(Portfolio, portfolio_id)
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -97,6 +117,147 @@ class PortfolioService:
 
         session.delete(portfolio)
         session.commit()
+
+    # ------------------------------------------------------------------
+    # Curve parameter resolution
+    # ------------------------------------------------------------------
+
+    def resolve_portfolio_params(
+        self,
+        session: Session,
+        portfolio_id: int,
+        request: PortfolioResolveRequest,
+    ) -> PortfolioResolveResponse:
+        """Resolve curve parameters for every trade in a portfolio."""
+        portfolio = session.get(Portfolio, portfolio_id)
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        trades = session.exec(
+            select(Trade).where(Trade.portfolio_id == portfolio_id)
+        ).all()
+
+        resolved_trades: list[TradeParamsResolved] = []
+        valuation_date = request.valuation_date
+
+        for trade in trades:
+            base: TradeParamsResolved = TradeParamsResolved(
+                trade_id=trade.id,
+                trade_id_str=trade.trade_id,
+                ccy_pair=trade.ccy_pair,
+                option_type=trade.trade_type,
+                direction=trade.direction,
+                strike=float(trade.strike) if trade.strike else None,
+                notional1=trade.notional1,
+                expiry_date=trade.expiry_date,
+            )
+
+            # Skip trades that don't have the minimum required fields
+            if not trade.ccy_pair or not trade.expiry_date:
+                resolved_trades.append(base)
+                continue
+
+            # Try to extract foreign currency (returns None if quote ≠ CNY)
+            try:
+                foreign_ccy = extract_foreign_currency(trade.ccy_pair)
+            except ValueError:
+                foreign_ccy = None
+
+            if foreign_ccy is None:
+                resolved_trades.append(base)
+                continue
+
+            # Compute remaining maturity
+            days_to_expiry = (trade.expiry_date - valuation_date).days
+            remaining_years = max(days_to_expiry / 365.0, 0.001)
+
+            # Resolve from curve
+            result = self.curve_service.resolve_valuation_params(
+                session, valuation_date, foreign_ccy, remaining_years,
+            )
+
+            if result:
+                base.rf_rate_base = result["rf_rate_base"]
+                base.rf_rate_quote = result["rf_rate_quote"]
+                base.spot = result["spot_rate"]
+                base.volatility = result["volatility"]
+                base.curve_resolved = True
+                base.curve_date = result["curve_date"]
+                base.remaining_maturity_years = round(remaining_years, 6)
+
+            resolved_trades.append(base)
+
+        return PortfolioResolveResponse(
+            valuation_date=valuation_date,
+            curve_type=request.curve_type,
+            trades=resolved_trades,
+        )
+
+    # ------------------------------------------------------------------
+    # Greeks calculation
+    # ------------------------------------------------------------------
+
+    def _resolve_params_for_trade(
+        self,
+        session: Session,
+        trade: Trade,
+        valuation_date: date,
+        override: TradeParamsOverride | None,
+        curve_type: str | None,
+        curve_valuation_date: date | None,
+    ) -> tuple[float, float, float, float, date | None]:
+        """Resolve (spot, vol, rf_base, rf_quote, curve_date) for a single trade.
+
+        Priority chain per field (highest first):
+          1. User override from *override* (if not None)
+          2. Curve resolution (if *curve_type* is set and data exists)
+          3. Trade defaults → hardcoded defaults
+        """
+        # Start with the hardcoded / trade defaults
+        spot: float = trade.spot_rate or 6.8
+        vol: float = trade.volatility or 0.05
+        rf_base: float = 0.03
+        rf_quote: float = 0.03
+        resolved_curve_date: date | None = curve_valuation_date
+
+        # --- Curve resolution ---
+        if curve_type == "fx_implied_rate":
+            try:
+                foreign_ccy = extract_foreign_currency(trade.ccy_pair or "")
+            except ValueError:
+                foreign_ccy = None
+
+            if foreign_ccy is not None and trade.expiry_date:
+                days = (trade.expiry_date - valuation_date).days
+                remaining_years = max(days / 365.0, 0.001)
+
+                result = self.curve_service.resolve_valuation_params(
+                    session, valuation_date, foreign_ccy, remaining_years,
+                )
+                if result:
+                    # Curve-derived values override the defaults
+                    if result.get("rf_rate_base") is not None:
+                        rf_base = result["rf_rate_base"]
+                    if result.get("rf_rate_quote") is not None:
+                        rf_quote = result["rf_rate_quote"]
+                    if result.get("spot_rate") is not None:
+                        spot = result["spot_rate"]
+                    if result.get("volatility") is not None:
+                        vol = result["volatility"]
+                    resolved_curve_date = result.get("curve_date")
+
+        # --- User overrides (always take priority) ---
+        if override is not None:
+            if override.rf_rate_base is not None:
+                rf_base = override.rf_rate_base
+            if override.rf_rate_quote is not None:
+                rf_quote = override.rf_rate_quote
+            if override.spot is not None:
+                spot = override.spot
+            if override.volatility is not None:
+                vol = override.volatility
+
+        return (spot, vol, rf_base, rf_quote, resolved_curve_date)
 
     def calculate_greeks(
         self,
@@ -113,16 +274,21 @@ class PortfolioService:
             select(Trade).where(Trade.portfolio_id == portfolio_id)
         ).all()
 
+        # Build override lookup
+        override_map: dict[int, TradeParamsOverride] = {}
+        for tp in request.trade_params:
+            override_map[tp.trade_id] = tp
+
         if not trades:
             return PortfolioGreeksResponse(
                 portfolio_id=portfolio_id,
                 portfolio_name=portfolio.name,
                 trade_count=0,
-                rf_rate_base=request.rf_rate_base,
-                rf_rate_quote=request.rf_rate_quote,
+                curve_type=request.curve_type,
             )
 
         valuation_date = request.valuation_date or date.today()
+        curve_valuation_date: date | None = None
         total_delta = 0.0
         total_gamma = 0.0
         total_npv = 0.0
@@ -144,8 +310,13 @@ class PortfolioService:
                 )
                 continue
 
-            spot = request.spot or trade.spot_rate or 6.8
-            vol = request.volatility or trade.volatility or 0.05
+            override = override_map.get(trade.id)
+            spot, vol, rf_base, rf_quote, cd = self._resolve_params_for_trade(
+                session, trade, valuation_date, override, request.curve_type, curve_valuation_date,
+            )
+            if cd is not None:
+                curve_valuation_date = cd
+
             days_to_expiry = (trade.expiry_date - valuation_date).days
             tte = max(days_to_expiry / 365.0, 0.001)
 
@@ -156,8 +327,8 @@ class PortfolioService:
                 strike=float(trade.strike),
                 volatility=vol,
                 time_to_expiry_years=tte,
-                rf_rate_base=request.rf_rate_base,
-                rf_rate_quote=request.rf_rate_quote,
+                rf_rate_base=rf_base,
+                rf_rate_quote=rf_quote,
             )
 
             if greeks.get("error"):
@@ -199,6 +370,24 @@ class PortfolioService:
                 )
             )
 
+        # Representative params for the response — use the first trade's resolved values
+        rep_rf_base = override_map.get(
+            trades[0].id,
+            TradeParamsOverride(trade_id=trades[0].id),
+        ).rf_rate_base
+        rep_rf_quote = override_map.get(
+            trades[0].id,
+            TradeParamsOverride(trade_id=trades[0].id),
+        ).rf_rate_quote
+        rep_spot = override_map.get(
+            trades[0].id,
+            TradeParamsOverride(trade_id=trades[0].id),
+        ).spot
+        rep_vol = override_map.get(
+            trades[0].id,
+            TradeParamsOverride(trade_id=trades[0].id),
+        ).volatility
+
         return PortfolioGreeksResponse(
             portfolio_id=portfolio_id,
             portfolio_name=portfolio.name,
@@ -206,14 +395,19 @@ class PortfolioService:
             total_delta=round(total_delta, 6),
             total_gamma=round(total_gamma, 6),
             total_npv=round(total_npv, 6),
-            rf_rate_base=request.rf_rate_base,
-            rf_rate_quote=request.rf_rate_quote,
-            volatility_used=request.volatility,
-            spot_used=request.spot,
+            rf_rate_base=rep_rf_base,
+            rf_rate_quote=rep_rf_quote,
+            volatility_used=rep_vol,
+            spot_used=rep_spot,
+            curve_type=request.curve_type,
+            curve_valuation_date=curve_valuation_date,
             trades=trade_details,
         )
 
 
 def get_portfolio_service() -> PortfolioService:
     """FastAPI dependency: provide a PortfolioService instance."""
-    return PortfolioService(greeks_service=GreeksService())
+    return PortfolioService(
+        greeks_service=GreeksService(),
+        curve_service=CurveService(),
+    )

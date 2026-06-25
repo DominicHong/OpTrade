@@ -66,6 +66,10 @@ def _background_crawl() -> None:
     Must run in a separate thread because uvicorn's SelectorEventLoop on
     Windows doesn't support asyncio subprocesses (needed by Playwright).
     Failure is logged but never propagated — this is a best-effort task.
+
+    Uses explicit loop management (instead of ``asyncio.run()``) so that
+    Playwright browser subprocesses can be properly cleaned up before the
+    loop closes, avoiding "operation on closed pipe" errors on shutdown.
     """
 
     async def _run() -> None:
@@ -90,7 +94,25 @@ def _background_crawl() -> None:
                 exc_info=True,
             )
 
-    asyncio.run(_run())
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_run())
+    except Exception:
+        pass
+    finally:
+        # Cancel all pending tasks to give them a chance to clean up
+        # (e.g. Playwright browser subprocess).
+        pending = asyncio.all_tasks(loop)
+        if pending:
+            for task in pending:
+                task.cancel()
+            try:
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            except Exception:
+                pass
+        loop.close()
 
 
 def create_app() -> FastAPI:

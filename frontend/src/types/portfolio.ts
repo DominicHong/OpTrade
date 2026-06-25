@@ -24,12 +24,59 @@ export interface PortfolioGreeksSummary {
   breakdown_by_ccy: Record<string, Record<string, number>>
 }
 
+// ---------------------------------------------------------------------------
+// Curve parameter resolution
+// ---------------------------------------------------------------------------
+
+export interface PortfolioResolveRequest {
+  valuation_date: string
+  curve_type: string
+}
+
+export interface TradeParamsResolved {
+  trade_id: number
+  trade_id_str: string | null
+  ccy_pair: string | null
+  option_type: string | null
+  direction: string | null
+  strike: number | null
+  notional1: number | null
+  expiry_date: string | null
+  remaining_maturity_years: number | null
+  rf_rate_base: number | null   // decimal
+  rf_rate_quote: number | null  // decimal
+  spot: number | null
+  volatility: number | null     // decimal, annualised
+  curve_resolved: boolean
+  curve_date: string | null
+}
+
+export interface PortfolioResolveResponse {
+  valuation_date: string
+  curve_type: string
+  trades: TradeParamsResolved[]
+}
+
+// ---------------------------------------------------------------------------
+// Per-trade parameter overrides
+// ---------------------------------------------------------------------------
+
+export interface TradeParamsOverride {
+  trade_id: number
+  rf_rate_base: number | null
+  rf_rate_quote: number | null
+  spot: number | null
+  volatility: number | null
+}
+
+// ---------------------------------------------------------------------------
+// Greeks request / response
+// ---------------------------------------------------------------------------
+
 export interface PortfolioGreeksRequest {
-  rf_rate_base: number
-  rf_rate_quote: number
-  volatility?: number | null
-  spot?: number | null
   valuation_date?: string | null
+  curve_type?: string | null
+  trade_params?: TradeParamsOverride[]
 }
 
 export interface TradeGreeksDetail {
@@ -53,9 +100,11 @@ export interface PortfolioGreeksResponse {
   total_delta: number
   total_gamma: number
   total_npv: number
-  rf_rate_base: number
-  rf_rate_quote: number
+  rf_rate_base: number | null
+  rf_rate_quote: number | null
   volatility_used: number | null
   spot_used: number | null
+  curve_type: string | null
+  curve_valuation_date: string | null
   trades: TradeGreeksDetail[]
 }
