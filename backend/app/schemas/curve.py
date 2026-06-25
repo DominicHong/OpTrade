@@ -59,6 +59,8 @@ class FxImpliedRateFilterParams(BaseModel):
     tenor: str | None = None
     page: int = 1
     page_size: int = 100
+    sort_by: str = "curve_date"
+    sort_order: str = "desc"
 
 
 class FxImpliedRateListResponse(BaseModel):

@@ -193,7 +193,7 @@ function isRowSelected(row: T): boolean {
   position: sticky;
   top: 0;
 }
-.data-table th.sortable { cursor: pointer; user-select: none; }
+.data-table th.sortable { cursor: pointer; -webkit-user-select: none; user-select: none; }
 .data-table th.sortable:hover { background: var(--color-bg-hover); color: var(--color-text); }
 .data-table th.active { color: var(--color-primary); background: var(--color-primary-bg); }
 .data-table th.right, .data-table td.right { text-align: right; }

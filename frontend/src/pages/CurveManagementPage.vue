@@ -122,24 +122,26 @@ onMounted(() => {
     <section class="filter-bar">
       <div class="filter-row">
         <div class="filter-group">
-          <label>日期从</label>
+          <label for="filter-date-from">日期从</label>
           <input
+            id="filter-date-from"
             v-model="filterDateFrom"
             type="date"
             class="filter-input"
           />
         </div>
         <div class="filter-group">
-          <label>日期至</label>
+          <label for="filter-date-to">日期至</label>
           <input
+            id="filter-date-to"
             v-model="filterDateTo"
             type="date"
             class="filter-input"
           />
         </div>
         <div class="filter-group">
-          <label>货币</label>
-          <select v-model="filterCurrency" class="filter-select">
+          <label for="filter-currency">货币</label>
+          <select id="filter-currency" v-model="filterCurrency" class="filter-select">
             <option value="">全部</option>
             <option
               v-for="ccy in (store.coverage?.currencies ?? [])"
@@ -151,8 +153,8 @@ onMounted(() => {
           </select>
         </div>
         <div class="filter-group">
-          <label>期限</label>
-          <select v-model="filterTenor" class="filter-select">
+          <label for="filter-tenor">期限</label>
+          <select id="filter-tenor" v-model="filterTenor" class="filter-select">
             <option value="">全部</option>
             <option
               v-for="t in (store.coverage?.tenors ?? [])"
@@ -200,7 +202,10 @@ onMounted(() => {
           :columns="columns"
           :rows="(store.rates as unknown as Record<string, unknown>[])"
           :loading="store.loading"
+          :sort-by="store.filters.sort_by"
+          :sort-order="store.filters.sort_order"
           empty-message="暂无符合条件的曲线数据"
+          @sort="store.setSort"
         >
           <!-- Custom cell rendering for numeric columns -->
           <template #cell-foreign_implied_rate="{ value }">

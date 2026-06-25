@@ -10,6 +10,7 @@ import logging
 from datetime import date, datetime
 
 from fastapi import HTTPException
+from sqlalchemy import case
 from sqlmodel import Session, col, func, select
 
 from app.models.curve import CurveDefinition, FxImpliedRate
@@ -85,14 +86,21 @@ class CurveService:
             select(func.count()).select_from(base.subquery())
         ).one()
 
+        # Sorting.
+        sort_column = _get_sort_column(params.sort_by)
+        primary_order = (
+            sort_column.desc()
+            if params.sort_order.lower() == "desc"
+            else sort_column.asc()
+        )
+        order_terms: list = [primary_order]
+        if params.sort_by == "curve_date":
+            order_terms.extend([_usd_first_order(), FxImpliedRate.tenor])
+
         # Paginated rows.
         offset = (params.page - 1) * params.page_size
         rows = session.exec(
-            base.order_by(
-                FxImpliedRate.curve_date.desc(),
-                FxImpliedRate.foreign_currency,
-                FxImpliedRate.tenor,
-            )
+            base.order_by(*order_terms)
             .offset(offset)
             .limit(params.page_size)
         ).all()
@@ -250,6 +258,25 @@ def _tenor_sort_key(t: str) -> tuple[int, float]:
 def _sort_tenors(tenors: list[str]) -> list[str]:
     """Sort tenor labels in logical duration order."""
     return sorted(tenors, key=_tenor_sort_key)
+
+
+def _get_sort_column(sort_by: str):
+    """Return the FxImpliedRate column to order by, defaulting to curve_date."""
+    allowed = {
+        "curve_date": FxImpliedRate.curve_date,
+        "foreign_currency": FxImpliedRate.foreign_currency,
+        "tenor": FxImpliedRate.tenor,
+        "foreign_implied_rate": FxImpliedRate.foreign_implied_rate,
+        "cny_risk_free_rate": FxImpliedRate.cny_risk_free_rate,
+        "spot_rate": FxImpliedRate.spot_rate,
+        "swap_points": FxImpliedRate.swap_points,
+    }
+    return allowed.get(sort_by, FxImpliedRate.curve_date)
+
+
+def _usd_first_order():
+    """Return an ordering clause that places USD before other currencies."""
+    return case((FxImpliedRate.foreign_currency == "USD", 0), else_=1).asc()
 
 
 # ------------------------------------------------------------------

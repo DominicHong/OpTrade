@@ -29,6 +29,8 @@ export interface FxImpliedRateFilterParams {
   tenor?: string | null
   page?: number
   page_size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface FxImpliedRateListResponse {

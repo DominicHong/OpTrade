@@ -28,6 +28,8 @@ export const useCurveStore = defineStore('curve', () => {
   const filters = ref<FxImpliedRateFilterParams>({
     page: 1,
     page_size: 50,
+    sort_by: 'curve_date',
+    sort_order: 'desc',
   })
 
   // ---- computed ----
@@ -79,6 +81,13 @@ export const useCurveStore = defineStore('curve', () => {
     return loadRates()
   }
 
+  function setSort(column: string) {
+    const current = filters.value.sort_by
+    const order = current === column && filters.value.sort_order === 'asc' ? 'desc' : 'asc'
+    filters.value = { ...filters.value, sort_by: column, sort_order: order, page: 1 }
+    return loadRates()
+  }
+
   function goToPage(page: number) {
     if (page < 1 || page > totalPages.value) return
     return loadRates({ page })
@@ -124,6 +133,7 @@ export const useCurveStore = defineStore('curve', () => {
     loadRates,
     loadCoverage,
     setFilters,
+    setSort,
     goToPage,
     refresh,
     init,
