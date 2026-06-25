@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import type { EditableTradeParams } from '@/composables/useGreeksCalculation'
 import type { CurveDefinition } from '@/types/curve'
 
-defineProps<{
+const props = defineProps<{
   valuationDate: string
   curveType: string | null
   tradeParams: EditableTradeParams[]
@@ -18,6 +19,13 @@ const emit = defineEmits<{
   updateTradeParam: [tradeId: number, field: 'rfRateBase' | 'rfRateQuote' | 'spot' | 'volatility', value: number | null]
   submit: []
 }>()
+
+// Default to the first available curve when definitions load
+watch(() => props.curveDefinitions, (defs) => {
+  if (!props.curveType && defs.length > 0) {
+    emit('update:curveType', defs[0].curve_type)
+  }
+}, { immediate: true })
 
 function onTradeFieldChange(
   tradeId: number,
@@ -62,7 +70,6 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
           :value="curveType"
           @change="emit('update:curveType', ($event.target as HTMLSelectElement).value || null)"
         >
-          <option value="">无 (手动输入参数)</option>
           <option
             v-for="def in curveDefinitions"
             :key="def.id"

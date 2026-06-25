@@ -6,6 +6,7 @@ import { useGreeksCalculation } from '@/composables/useGreeksCalculation'
 import PortfolioSelector from '@/components/portfolio/PortfolioSelector.vue'
 import GreeksParamsForm from '@/components/portfolio/GreeksParamsForm.vue'
 import GreeksResultPanel from '@/components/portfolio/GreeksResultPanel.vue'
+import GreeksHelpPanel from '@/components/portfolio/GreeksHelpPanel.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 
 const pfStore = usePortfolioStore()
@@ -86,6 +87,8 @@ async function onCalculate() {
       </div>
 
       <GreeksResultPanel v-if="result" :result="result" />
+
+      <GreeksHelpPanel />
     </template>
   </div>
 </template>
