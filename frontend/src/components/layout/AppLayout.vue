@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppHeader from './AppHeader.vue'
 import AppSidebar from './AppSidebar.vue'
+import ToastNotification from '@/components/shared/ToastNotification.vue'
 </script>
 
 <template>
@@ -12,6 +13,7 @@ import AppSidebar from './AppSidebar.vue'
         <router-view />
       </main>
     </div>
+    <ToastNotification />
   </div>
 </template>
 

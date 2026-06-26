@@ -45,6 +45,31 @@ export function formatDate(value: string | null | undefined): string {
   return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
+/** Format an ISO datetime string to Beijing time (YYYY-MM-DD HH:mm:ss).
+ *
+ * The backend stores `created_at` as UTC but may serialize it as a naive
+ * datetime (e.g. "2026-06-26T10:12:35"). JavaScript would interpret that as
+ * local time, so we append "Z" when the string lacks timezone info to force
+ * UTC parsing before converting to Asia/Shanghai.
+ */
+export function formatBeijingTime(value: string | null | undefined): string {
+  if (!value) return '--'
+  const hasTz = /Z|[+-]\d{2}:?\d{2}$/.test(value)
+  const iso = hasTz ? value : value + 'Z'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return value
+  return d.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
 /** Get CSS class for positive/negative/zero Greek values. */
 export function greekColorClass(value: number | null | undefined): string {
   if (value === null || value === undefined) return ''

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import type { EditableTradeParams } from '@/composables/useGreeksCalculation'
 import type { CurveDefinition } from '@/types/curve'
 
@@ -27,19 +27,36 @@ watch(() => props.curveDefinitions, (defs) => {
   }
 }, { immediate: true })
 
-function onTradeFieldChange(
+// Local editing state to avoid formatting/interruption during typing
+const editingValues = ref<Record<string, string>>({})
+
+function syncEditingValues() {
+  props.tradeParams.forEach((tp) => {
+    editingValues.value[`${tp.tradeId}-rfRateBase`] = tp.rfRateBase != null ? tp.rfRateBase.toFixed(4) : ''
+    editingValues.value[`${tp.tradeId}-rfRateQuote`] = tp.rfRateQuote != null ? tp.rfRateQuote.toFixed(4) : ''
+    editingValues.value[`${tp.tradeId}-volatility`] = tp.volatility != null ? tp.volatility.toFixed(4) : ''
+    editingValues.value[`${tp.tradeId}-spot`] = tp.spot != null ? tp.spot.toFixed(4) : ''
+  })
+}
+
+watch(() => props.tradeParams, syncEditingValues, { immediate: true, deep: true })
+
+function onTradeFieldInput(
   tradeId: number,
   field: 'rfRateBase' | 'rfRateQuote' | 'spot' | 'volatility',
   event: Event,
 ) {
   const input = event.target as HTMLInputElement
-  const value = input.value.trim() === '' ? null : parseFloat(input.value)
-  emit('updateTradeParam', tradeId, field, isNaN(value as number) ? null : value)
+  editingValues.value[`${tradeId}-${field}`] = input.value
 }
 
-function fmtNullable(val: number | null | undefined, decimals = 4): string {
-  if (val == null) return ''
-  return val.toFixed(decimals)
+function onTradeFieldBlur(
+  tradeId: number,
+  field: 'rfRateBase' | 'rfRateQuote' | 'spot' | 'volatility',
+) {
+  const raw = editingValues.value[`${tradeId}-${field}`]?.trim() ?? ''
+  const value = raw === '' ? null : parseFloat(raw)
+  emit('updateTradeParam', tradeId, field, isNaN(value as number) ? null : value)
 }
 
 function displayValue(val: number | null | undefined, decimals = 4): string {
@@ -125,45 +142,54 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
           >
             <td class="cell-info">{{ tp.tradeIdStr ?? tp.tradeId }}</td>
             <td class="cell-info">{{ tp.ccyPair ?? '—' }}</td>
-            <td class="cell-info">{{ tp.optionType ?? '—' }}</td>
+            <td class="cell-info">
+              <span v-if="tp.optionType" :class="tp.optionType === 'CALL' ? 'badge-call' : 'badge-put'">
+                {{ tp.optionType }}
+              </span>
+              <span v-else>—</span>
+            </td>
             <td class="cell-info">{{ tp.direction ?? '—' }}</td>
             <td class="cell-info">{{ tp.strike != null ? tp.strike.toFixed(4) : '—' }}</td>
             <td class="cell-info">{{ tp.expiryDate ?? '—' }}</td>
             <td class="cell-info">{{ displayValue(tp.remainingMaturityYears) }}</td>
             <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
               <input
-                type="number"
-                step="0.01"
-                :value="tp.rfRateBase != null ? fmtNullable(tp.rfRateBase) : ''"
+                type="text"
+                inputmode="decimal"
+                :value="editingValues[`${tp.tradeId}-rfRateBase`]"
                 :placeholder="tp.curveResolved ? '曲线推导' : '默认3.0'"
-                @input="onTradeFieldChange(tp.tradeId, 'rfRateBase', $event)"
+                @input="onTradeFieldInput(tp.tradeId, 'rfRateBase', $event)"
+                @blur="onTradeFieldBlur(tp.tradeId, 'rfRateBase')"
               />
             </td>
             <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
               <input
-                type="number"
-                step="0.01"
-                :value="tp.rfRateQuote != null ? fmtNullable(tp.rfRateQuote) : ''"
+                type="text"
+                inputmode="decimal"
+                :value="editingValues[`${tp.tradeId}-rfRateQuote`]"
                 :placeholder="tp.curveResolved ? '曲线推导' : '默认3.0'"
-                @input="onTradeFieldChange(tp.tradeId, 'rfRateQuote', $event)"
+                @input="onTradeFieldInput(tp.tradeId, 'rfRateQuote', $event)"
+                @blur="onTradeFieldBlur(tp.tradeId, 'rfRateQuote')"
               />
             </td>
             <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
               <input
-                type="number"
-                step="0.01"
-                :value="tp.volatility != null ? fmtNullable(tp.volatility) : ''"
+                type="text"
+                inputmode="decimal"
+                :value="editingValues[`${tp.tradeId}-volatility`]"
                 :placeholder="tp.curveResolved ? '曲线推导' : '默认5.0'"
-                @input="onTradeFieldChange(tp.tradeId, 'volatility', $event)"
+                @input="onTradeFieldInput(tp.tradeId, 'volatility', $event)"
+                @blur="onTradeFieldBlur(tp.tradeId, 'volatility')"
               />
             </td>
             <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
               <input
-                type="number"
-                step="0.0001"
-                :value="tp.spot != null ? fmtNullable(tp.spot) : ''"
+                type="text"
+                inputmode="decimal"
+                :value="editingValues[`${tp.tradeId}-spot`]"
                 :placeholder="tp.curveResolved ? '曲线推导' : '默认6.8'"
-                @input="onTradeFieldChange(tp.tradeId, 'spot', $event)"
+                @input="onTradeFieldInput(tp.tradeId, 'spot', $event)"
+                @blur="onTradeFieldBlur(tp.tradeId, 'spot')"
               />
             </td>
           </tr>
@@ -346,5 +372,25 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
   color: var(--color-text-secondary);
   font-style: italic;
   padding: 1rem 0;
+}
+
+/* ---- Badges ---- */
+.badge-call {
+  background: var(--color-positive-bg);
+  color: var(--color-positive);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-put {
+  background: var(--color-negative-bg);
+  color: var(--color-negative);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 </style>

@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/uiStore'
 import DataTable from '@/components/shared/DataTable.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 import { exportFxImpliedRates } from '@/api/curves'
+import { formatBeijingTime } from '@/utils/format'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { FxImpliedRate } from '@/types/curve'
 
@@ -47,13 +48,14 @@ function resetFilters() {
 }
 
 async function handleRefresh() {
+  ui.addNotification('info', '开始从中国货币网抓取外币隐含利率曲线数据，请稍候...')
   const result = await store.refresh()
   if (result.status === 'success') {
-    ui.addNotification('success', `数据刷新完成：新增 ${result.records_added} 条记录`)
+    ui.addNotification('success', `抓取成功：新增 ${result.records_added} 条记录`)
   } else if (result.status === 'partial') {
-    ui.addNotification('warning', `部分数据刷新成功：新增 ${result.records_added} 条记录`)
+    ui.addNotification('warning', `部分抓取成功：新增 ${result.records_added} 条记录`)
   } else {
-    ui.addNotification('error', result.error_message || '数据刷新失败')
+    ui.addNotification('error', result.error_message || '抓取失败')
   }
 }
 
@@ -145,7 +147,7 @@ onMounted(() => {
         <div class="info-item">
           <span class="info-label">最后更新</span>
           <span class="info-value">
-            {{ store.coverage?.last_updated?.slice(0, 19) ?? '尚未获取数据' }}
+            {{ store.coverage?.last_updated ? formatBeijingTime(store.coverage.last_updated) : '尚未获取数据' }}
           </span>
         </div>
       </div>
