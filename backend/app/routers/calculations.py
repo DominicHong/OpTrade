@@ -56,7 +56,6 @@ def calculate_greeks(
             spot=spot,
             strike=float(trade.strike),
             volatility=vol,
-            time_to_expiry_years=tte,
             rf_rate_base=rf_rate_base,
             rf_rate_quote=rf_rate_quote,
             valuation_date=valuation_date,

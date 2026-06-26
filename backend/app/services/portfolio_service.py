@@ -28,6 +28,44 @@ import logging
 logger = logging.getLogger("optrade.service.portfolio")
 
 
+_SELL_DIRECTIONS = {"sell", "卖出"}
+
+
+def _is_sell(direction: str | None) -> bool:
+    """Return True if *direction* represents a short / sell position."""
+    if not direction:
+        return False
+    return direction.lower() in _SELL_DIRECTIONS
+
+
+def _resolve_premium_in_ccy2(
+    premium_amount: float | None,
+    premium_currency: str | None,
+    ccy_pair: str | None,
+    spot: float,
+) -> float | None:
+    """Return the premium expressed in ccy2 (the NPV quote currency).
+
+    ``premium_amount`` is stored in ``premium_currency`` which may be either
+    leg of the currency pair. NPV is denominated in ccy2 per unit of ccy1,
+    so to compare premium with ``npv × notional1`` we normalise the premium
+    to ccy2 using the spot rate when it is quoted in ccy1.
+    """
+    if premium_amount is None:
+        return None
+
+    ccy1: str | None = None
+    if ccy_pair and "/" in ccy_pair:
+        parts = ccy_pair.split("/")
+        if len(parts) == 2:
+            ccy1 = parts[0]
+
+    if premium_currency and ccy1 and premium_currency == ccy1:
+        # Premium in base currency → convert to quote currency via spot
+        return premium_amount * spot
+    return premium_amount
+
+
 class PortfolioService:
     """Portfolio-level operations and risk aggregation service."""
 
@@ -292,6 +330,7 @@ class PortfolioService:
         total_delta = 0.0
         total_gamma = 0.0
         total_npv = 0.0
+        total_profit = 0.0
         trade_details: list[TradeGreeksDetail] = []
 
         for trade in trades:
@@ -317,18 +356,19 @@ class PortfolioService:
             if cd is not None:
                 curve_valuation_date = cd
 
-            days_to_expiry = (trade.expiry_date - valuation_date).days
-            tte = max(days_to_expiry / 365.0, 0.001)
-
+            # Pass explicit dates to greeks_service — avoids TTE roundtrip
+            # precision loss and lets the service handle expiry centrally
+            # (expired options return all-zero Greeks).
             greeks = self.greeks_service.calculate_vanilla_greeks(
                 option_type=trade.trade_type,
                 direction=trade.direction,
                 spot=spot,
                 strike=float(trade.strike),
                 volatility=vol,
-                time_to_expiry_years=tte,
                 rf_rate_base=rf_base,
                 rf_rate_quote=rf_quote,
+                valuation_date=valuation_date,
+                expiry_date=trade.expiry_date,
             )
 
             if greeks.get("error"):
@@ -351,9 +391,34 @@ class PortfolioService:
             npv = greeks.get("npv") or 0.0
             notional = trade.notional1 or 1.0
 
+            # Premium (normalised to ccy2) and trade-level profit, expressed
+            # in NPV's per-unit (ccy2 / 1 ccy1) so they are directly
+            # comparable to the NPV column.
+            # NPV from QuantLib is signed (positive for long, negative for
+            # short). The user-facing formula uses the theoretical option
+            # price (always positive): Buy profit = NPV - premium,
+            # Sell profit = premium - NPV. Using the signed NPV this is
+            # equivalent to:
+            #   Buy  : profit_per_unit = npv - premium_per_unit
+            #   Sell : profit_per_unit = premium_per_unit + npv  (npv<0)
+            premium_total_ccy2 = _resolve_premium_in_ccy2(
+                trade.premium_amount, trade.premium_currency, trade.ccy_pair, spot,
+            )
+            if premium_total_ccy2 is not None:
+                premium_per_unit = premium_total_ccy2 / notional
+                if _is_sell(trade.direction):
+                    profit_per_unit = premium_per_unit + npv
+                else:
+                    profit_per_unit = npv - premium_per_unit
+            else:
+                premium_per_unit = None
+                profit_per_unit = None
+
             total_delta += delta * notional
             total_gamma += gamma * notional
             total_npv += npv * notional
+            if profit_per_unit is not None:
+                total_profit += profit_per_unit * notional
 
             trade_details.append(
                 TradeGreeksDetail(
@@ -367,6 +432,8 @@ class PortfolioService:
                     delta=round(delta, 6),
                     gamma=round(gamma, 6),
                     npv=round(npv, 6),
+                    premium=round(premium_per_unit, 6) if premium_per_unit is not None else None,
+                    profit=round(profit_per_unit, 6) if profit_per_unit is not None else None,
                 )
             )
 
@@ -395,6 +462,7 @@ class PortfolioService:
             total_delta=round(total_delta, 6),
             total_gamma=round(total_gamma, 6),
             total_npv=round(total_npv, 6),
+            total_profit=round(total_profit, 2),
             rf_rate_base=rep_rf_base,
             rf_rate_quote=rep_rf_quote,
             volatility_used=rep_vol,

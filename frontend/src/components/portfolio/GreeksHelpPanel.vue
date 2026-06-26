@@ -44,6 +44,18 @@ const expanded = ref(false)
               <td>理论期权费现值，Long 为正，Short 为负</td>
               <td>ccy2 / 1 ccy1</td>
             </tr>
+            <tr>
+              <td><strong>期权费</strong></td>
+              <td>成交时记录的期权费，按 spot 折算为 ccy2，再除以 notional1（与 NPV 同口径）</td>
+              <td>ccy2 / 1 ccy1</td>
+            </tr>
+            <tr>
+              <td><strong>盈利</strong></td>
+              <td>
+                期权盈利。买入：NPV − 期权费；卖出：期权费 − NPV。
+              </td>
+              <td>ccy2 / 1 ccy1</td>
+            </tr>
           </tbody>
         </table>
         <p class="help-example">
@@ -71,7 +83,14 @@ const expanded = ref(false)
           <div class="formula">加权 Delta = Σ (delta<sub>i</sub> × notional1<sub>i</sub>)</div>
           <div class="formula">加权 Gamma = Σ (gamma<sub>i</sub> × notional1<sub>i</sub>)</div>
           <div class="formula">加权 NPV   = Σ (npv<sub>i</sub>   × notional1<sub>i</sub>)</div>
+          <div class="formula">加权盈利   = Σ (profit<sub>i</sub> × notional1<sub>i</sub>)</div>
         </div>
+        <p class="help-example">
+          盈利公式（逐笔，单位与 NPV 相同，ccy2 / 1 ccy1）：<br>
+          买入盈利 = NPV − 期权费<br>
+          卖出盈利 = 期权费 − NPV<br>
+          组合加权盈利 = Σ (盈利<sub>i</sub> × notional1<sub>i</sub>)
+        </p>
       </section>
 
       <section>

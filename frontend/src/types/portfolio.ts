@@ -90,6 +90,8 @@ export interface TradeGreeksDetail {
   delta: number | null
   gamma: number | null
   npv: number | null
+  premium: number | null
+  profit: number | null
   error: string | null
 }
 
@@ -100,6 +102,7 @@ export interface PortfolioGreeksResponse {
   total_delta: number
   total_gamma: number
   total_npv: number
+  total_profit: number
   rf_rate_base: number | null
   rf_rate_quote: number | null
   volatility_used: number | null

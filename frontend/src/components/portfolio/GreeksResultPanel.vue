@@ -8,13 +8,27 @@ defineProps<{
 
 function fmt(val: number | null | undefined, decimals = 4): string {
   if (val == null) return '—'
-  return val.toFixed(decimals)
+  return val.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+function profitColor(val: number | null | undefined): string {
+  if (val == null) return ''
+  if (val > 0) return 'profit-positive'
+  if (val < 0) return 'profit-negative'
+  return ''
+}
+
+function isCall(optionType: string | null | undefined): boolean {
+  return !!optionType && optionType.toUpperCase() === 'CALL'
 }
 </script>
 
 <template>
   <div class="card">
-    <h3>{{ result.portfolio_name }} — 聚合风险指标</h3>
+    <h3>{{ result.portfolio_name }} — 风险指标</h3>
     <div class="greeks-summary">
       <div class="greek-card greek-delta">
         <span class="greek-label">Delta (加权, 万)</span>
@@ -28,14 +42,10 @@ function fmt(val: number | null | undefined, decimals = 4): string {
         <span class="greek-label">NPV (加权, 万)</span>
         <span class="greek-value">{{ fmt(toWan(result.total_npv), 2) }}</span>
       </div>
-    </div>
-    <div class="params-used">
-      <span>
-        参数: base r = {{ result.rf_rate_base != null ? (result.rf_rate_base * 100).toFixed(2) + '%' : '—' }},
-        quote r = {{ result.rf_rate_quote != null ? (result.rf_rate_quote * 100).toFixed(2) + '%' : '—' }},
-        vol = {{ result.volatility_used != null ? (result.volatility_used * 100).toFixed(2) + '%' : '交易自带' }},
-        spot = {{ result.spot_used ?? '交易自带' }}
-      </span>
+      <div class="greek-card greek-profit">
+        <span class="greek-label">盈利 (加权, 万)</span>
+        <span class="greek-value" :class="profitColor(result.total_profit)">{{ fmt(toWan(result.total_profit), 2) }}</span>
+      </div>
     </div>
   </div>
 
@@ -54,22 +64,31 @@ function fmt(val: number | null | undefined, decimals = 4): string {
             <th>Delta</th>
             <th>Gamma</th>
             <th>NPV</th>
+            <th>期权费</th>
+            <th>盈利</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="t in result.trades" :key="t.trade_id" :class="{ 'row-error': t.error }">
             <td>{{ t.trade_id_str ?? t.trade_id }}</td>
             <td>{{ t.ccy_pair ?? '—' }}</td>
-            <td>{{ t.option_type ?? '—' }}</td>
+            <td>
+              <span v-if="t.option_type" :class="isCall(t.option_type) ? 'badge-call' : 'badge-put'">
+                {{ t.option_type }}
+              </span>
+              <span v-else>—</span>
+            </td>
             <td>{{ t.direction ?? '—' }}</td>
             <td>{{ fmt(t.strike) }}</td>
             <td>{{ fmt(toWan(t.notional1), 2) }}</td>
             <td>{{ t.error ? '—' : fmt(t.delta) }}</td>
             <td>{{ t.error ? '—' : fmt(t.gamma) }}</td>
-            <td>{{ t.error ? '—' : fmt(t.npv, 2) }}</td>
+            <td>{{ t.error ? '—' : fmt(t.npv, 4) }}</td>
+            <td>{{ t.error ? '—' : fmt(t.premium, 4) }}</td>
+            <td :class="profitColor(t.profit)">{{ t.error ? '—' : fmt(t.profit, 4) }}</td>
           </tr>
           <tr v-for="t in result.trades" :key="'err-' + t.trade_id" class="error-row-detail" v-show="t.error">
-            <td colspan="9" class="error-inline">{{ t.error }}</td>
+            <td colspan="11" class="error-inline">{{ t.error }}</td>
           </tr>
         </tbody>
       </table>
@@ -117,11 +136,10 @@ function fmt(val: number | null | undefined, decimals = 4): string {
 .greek-delta .greek-value { color: #2563eb; }
 .greek-gamma .greek-value { color: #7c3aed; }
 .greek-npv .greek-value { color: #059669; }
-.params-used {
-  font-size: 0.7rem;
-  color: var(--color-text-secondary);
-  font-style: italic;
-}
+.greek-profit .greek-value { color: #059669; }
+.profit-positive { color: #059669; }
+.profit-negative { color: #ef4444; }
+
 .table-wrap { overflow-x: auto; }
 .greeks-table {
   width: 100%;
@@ -147,4 +165,23 @@ function fmt(val: number | null | undefined, decimals = 4): string {
 .greeks-table th:first-child { text-align: left; }
 .row-error { color: var(--color-text-secondary); }
 .error-inline { color: #ef4444; font-size: 0.75rem; font-style: italic; }
+
+.badge-call {
+  background: var(--color-positive-bg);
+  color: var(--color-positive);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-put {
+  background: var(--color-negative-bg);
+  color: var(--color-negative);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 </style>

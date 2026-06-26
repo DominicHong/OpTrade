@@ -120,6 +120,8 @@ class TradeGreeksDetail(BaseModel):
     delta: float | None = None
     gamma: float | None = None
     npv: float | None = None
+    premium: float | None = None  # option premium, converted to ccy2
+    profit: float | None = None  # Buy: npv*notional - premium; Sell: premium + npv*notional (QuantLib's option NPV is Negative for short)
     error: str | None = None
 
 
@@ -132,6 +134,7 @@ class PortfolioGreeksResponse(BaseModel):
     total_delta: float = 0.0
     total_gamma: float = 0.0
     total_npv: float = 0.0
+    total_profit: float = 0.0
     rf_rate_base: float | None = None
     rf_rate_quote: float | None = None
     volatility_used: float | None = None

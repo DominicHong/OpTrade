@@ -31,6 +31,10 @@ onMounted(async () => {
     pfStore.loadPortfolios(),
     curveStore.init(),
   ])
+  // 默认选择第一个投资组合
+  if (!pfStore.currentPortfolio && pfStore.portfolios.length > 0) {
+    await pfStore.loadPortfolio(pfStore.portfolios[0].id)
+  }
 })
 
 // Reset when portfolio changes
