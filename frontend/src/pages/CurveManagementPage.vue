@@ -4,13 +4,17 @@ import { useCurveStore } from '@/stores/curveStore'
 import { useUiStore } from '@/stores/uiStore'
 import DataTable from '@/components/shared/DataTable.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
-import { exportFxImpliedRates } from '@/api/curves'
+import { exportFxImpliedRates, uploadFxImpliedXlsx } from '@/api/curves'
 import { formatBeijingTime } from '@/utils/format'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { FxImpliedRate } from '@/types/curve'
 
 const store = useCurveStore()
 const ui = useUiStore()
+
+// ---- upload state ----
+const uploading = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 
 // ---- filter form state ----
 const filterDateFrom = ref<string>('')
@@ -88,6 +92,33 @@ function handlePageChange(page: number) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+function triggerUpload() {
+  fileInput.value?.click()
+}
+
+async function handleFileChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  // Reset input so the same file can be selected again
+  target.value = ''
+  if (!file) return
+
+  if (!confirm('上传将清空现有曲线数据并导入新文件，是否继续？')) {
+    return
+  }
+
+  uploading.value = true
+  try {
+    const result = await uploadFxImpliedXlsx(file)
+    ui.addNotification('success', result.message || `导入成功：${result.records_added} 条记录`)
+    await Promise.all([store.loadRates(), store.loadCoverage()])
+  } catch (e) {
+    ui.addNotification('error', e instanceof Error ? e.message : '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
 // ---- pagination ----
 const visiblePages = computed(() => {
   const total = store.totalPages
@@ -151,14 +182,32 @@ onMounted(() => {
           </span>
         </div>
       </div>
-      <button
-        class="btn btn-primary"
-        :disabled="store.refreshing"
-        @click="handleRefresh"
-      >
-        <span v-if="store.refreshing" class="spinner-inline" />
-        {{ store.refreshing ? '刷新中...' : '刷新数据' }}
-      </button>
+      <div class="info-actions">
+        <input
+          ref="fileInput"
+          type="file"
+          accept=".xlsx,.xls"
+          class="hidden-file-input"
+          @change="handleFileChange"
+        />
+        <button
+          class="btn btn-primary"
+          :disabled="store.refreshing || uploading"
+          @click="handleRefresh"
+        >
+          <span v-if="store.refreshing" class="spinner-inline" />
+          {{ store.refreshing ? '爬取中...' : '爬取数据' }}
+        </button>
+        <button
+          class="btn btn-primary btn-upload"
+          :disabled="uploading || store.refreshing"
+          @click="triggerUpload"
+        >
+          <span v-if="uploading" class="spinner-inline" />
+          <span v-else class="btn-icon">⬆</span>
+          {{ uploading ? '导入中...' : '上传曲线Excel' }}
+        </button>
+      </div>
     </section>
 
     <!-- Filter bar -->
@@ -236,13 +285,13 @@ onMounted(() => {
         class="state-card empty"
       >
         <p>尚未获取曲线数据</p>
-        <p class="hint">点击"刷新数据"从中国货币网自动获取，或手动上传 Excel 文件</p>
+        <p class="hint">点击"爬取数据"从中国货币网自动获取，或点击"上传曲线Excel"手动导入文件</p>
         <button
           class="btn btn-primary"
           :disabled="store.refreshing"
           @click="handleRefresh"
         >
-          立即获取
+          立即爬取
         </button>
       </div>
 
@@ -370,6 +419,14 @@ onMounted(() => {
   font-weight: 600;
   color: var(--color-text);
 }
+.info-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.hidden-file-input {
+  display: none;
+}
 
 /* ---- Filter bar ---- */
 .filter-bar {
@@ -475,6 +532,15 @@ onMounted(() => {
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-dark, #1d4ed8);
+}
+.btn-upload {
+  background: #f97316;
+  border-color: #f97316;
+  color: #fff;
+}
+.btn-upload:hover:not(:disabled) {
+  background: #ea580c;
+  border-color: #ea580c;
 }
 .btn-secondary {
   border-color: var(--color-border);

@@ -13,7 +13,7 @@ from io import StringIO
 
 from fastapi import HTTPException
 from sqlalchemy import Select, case
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, delete, func, select
 
 from app.models.curve import CurveDefinition, FxImpliedRate
 from app.schemas.curve import (
@@ -217,17 +217,51 @@ class CurveService:
     def process_uploaded_xlsx(
         self, session: Session, xlsx_bytes: bytes,
     ) -> UploadResult:
-        """Parse an uploaded chinamoney XLSX and upsert its data."""
+        """Parse an uploaded chinamoney XLSX, clear existing data, then load.
+
+        The upload replaces all existing FX implied rate rows with the
+        parsed content of the supplied file.
+        """
         from app.services.datasources.china_money_crawler import (
             ChinaMoneyCrawler,
         )
 
         records = ChinaMoneyCrawler.parse_xlsx(xlsx_bytes)
-        added = ChinaMoneyCrawler._upsert_rates(session, records)
+        added = self._replace_all_rates(session, records)
         return UploadResult(
             records_added=added,
-            message=f"Processed {len(records)} rows from XLSX, {added} new records added.",
+            message=f"已清空原有数据并导入 {added} 条记录（共解析 {len(records)} 行）。",
         )
+
+    @staticmethod
+    def _replace_all_rates(session: Session, records: list[dict]) -> int:
+        """Delete all existing FX implied rate rows and insert the new records."""
+        # Clear existing data
+        session.exec(delete(FxImpliedRate))
+        session.commit()
+
+        added = 0
+        for rec in records:
+            if not all(
+                k in rec for k in ("curve_date", "foreign_currency", "tenor")
+            ):
+                continue
+            rate = FxImpliedRate(
+                curve_date=rec["curve_date"],
+                foreign_currency=rec["foreign_currency"],
+                tenor=rec["tenor"],
+                foreign_implied_rate=rec.get("foreign_implied_rate"),
+                cny_risk_free_rate=rec.get("cny_risk_free_rate"),
+                spot_rate=rec.get("spot_rate"),
+                swap_points=rec.get("swap_points"),
+                source="chinamoney",
+            )
+            session.add(rate)
+            added += 1
+
+        if added:
+            session.commit()
+        return added
 
 
     # ------------------------------------------------------------------
