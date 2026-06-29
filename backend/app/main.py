@@ -139,7 +139,7 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
-    from app.routers import trades, portfolios, counterparties, calculations, scenarios, imports, dashboard, market_data, curves
+    from app.routers import trades, portfolios, counterparties, calculations, scenarios, imports, dashboard, market_data, curves, spot_trades
 
     app.include_router(trades.router)
     app.include_router(portfolios.router)
@@ -150,6 +150,8 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(market_data.router)
     app.include_router(curves.router)
+    app.include_router(spot_trades.router)
+    app.include_router(spot_trades.import_router)
 
     @app.get("/api/health")
     def health_check() -> dict[str, str]:

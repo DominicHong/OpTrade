@@ -2,8 +2,10 @@
 import { onMounted, ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTradeStore } from '@/stores/tradeStore'
+import { useSpotTradeStore } from '@/stores/spotTradeStore'
 import { useUiStore } from '@/stores/uiStore'
 import { uploadFile, getColumnMapping } from '@/api/imports'
+import { uploadSpotFile, getSpotColumnMapping as getSpotColumnMappingApi } from '@/api/spotTrades'
 import DataTable from '@/components/shared/DataTable.vue'
 import SearchInput from '@/components/shared/SearchInput.vue'
 import NumberDisplay from '@/components/shared/NumberDisplay.vue'
@@ -11,14 +13,17 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 import PortfolioAutocomplete from '@/components/trade/PortfolioAutocomplete.vue'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { Trade, TradeCreate, TradeUpdate } from '@/types/trade'
+import type { SpotTrade, SpotTradeCreate, SpotTradeUpdate } from '@/types/spotTrade'
 import type { ImportConfirmResponse } from '@/types/api'
 import { formatDate, toWan } from '@/utils/format'
 import { useModalGuard } from '@/composables/useModalGuard'
 
 const router = useRouter()
 const store = useTradeStore()
+const spotStore = useSpotTradeStore()
 const ui = useUiStore()
 const search = ref('')
+const spotSearch = ref('')
 
 // --- Tab state ---
 const activeTab = ref<'list' | 'import' | 'mapping'>('list')
@@ -27,7 +32,9 @@ const activeTab = ref<'list' | 'import' | 'mapping'>('list')
 const importFile = ref<File | null>(null)
 const importLoading = ref(false)
 const importResult = ref<ImportConfirmResponse | null>(null)
+const importType = ref<'option' | 'spot'>('option')
 const columnMapping = ref<Record<string, string>>({})
+const spotColumnMapping = ref<Record<string, string>>({})
 
 // --- Trade form modal ---
 const showModal = ref(false)
@@ -37,6 +44,33 @@ const formLoading = ref(false)
 
 // Track which premium field the user is actively editing
 const premiumEditingField = ref<'rate' | 'amount' | null>(null)
+
+// --- Spot trade form modal ---
+const showSpotModal = ref(false)
+const spotModalMode = ref<'create' | 'edit'>('create')
+const spotFormError = ref<string | null>(null)
+const spotFormLoading = ref(false)
+const spotEditingId = ref<number | null>(null)
+const spotFormPortfolioId = ref<number | null>(null)
+
+const emptySpotForm: SpotTradeCreate = {
+  trade_id: '',
+  ccy_pair: 'USD/CNY',
+  direction: '买入',
+  event_type: '正常',
+  deal_price: null,
+  ccy1_amount: null,
+  ccy2_amount: null,
+  trade_date: null,
+  value_date: null,
+  counterparty_name: null,
+  portfolio_name: null,
+  delivery_status: null,
+  source: null,
+  venue: null,
+}
+
+const spotForm = ref<SpotTradeCreate | SpotTradeUpdate>({ ...emptySpotForm })
 
 const emptyForm: TradeCreate = {
   trade_id: '',
@@ -141,6 +175,8 @@ watch(() => form.value.notional2, () => {
 // --- Batch selection ---
 const selectedIds = ref<number[]>([])
 const showBatchDeleteConfirm = ref(false)
+const spotSelectedIds = ref<number[]>([])
+const showSpotBatchDeleteConfirm = ref(false)
 
 function onSelectionChange(ids: number[]) {
   selectedIds.value = ids
@@ -167,6 +203,31 @@ function cancelBatchDelete() {
   showBatchDeleteConfirm.value = false
 }
 
+function onSpotSelectionChange(ids: number[]) {
+  spotSelectedIds.value = ids
+}
+
+function confirmSpotBatchDelete() {
+  if (spotSelectedIds.value.length === 0) return
+  showSpotBatchDeleteConfirm.value = true
+}
+
+async function doSpotBatchDelete() {
+  try {
+    const count = await spotStore.batchDelete(spotSelectedIds.value)
+    ui.addNotification('success', `已删除 ${count} 条即期流水`)
+    spotSelectedIds.value = []
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
+  } finally {
+    showSpotBatchDeleteConfirm.value = false
+  }
+}
+
+function cancelSpotBatchDelete() {
+  showSpotBatchDeleteConfirm.value = false
+}
+
 const columns = computed<TableColumn[]>(() => {
   const types = new Set(store.trades.map(t => t.premium_type).filter(Boolean) as string[])
   const premiumRateLabel =
@@ -190,14 +251,36 @@ const columns = computed<TableColumn[]>(() => {
   ]
 })
 
+// --- Spot trade columns ---
+const spotColumns = computed<TableColumn[]>(() => [
+  { key: 'actions', label: '操作', width: '100px' },
+  { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
+  { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
+  { key: 'direction', label: '方向', sortable: true, width: '60px' },
+  { key: 'event_type', label: '事件类型', sortable: true, width: '110px' },
+  { key: 'deal_price', label: '成交价', sortable: true, width: '90px', align: 'right' as const },
+  { key: 'ccy1_amount', label: '货币1金额(万)', sortable: true, width: '120px', align: 'right' as const },
+  { key: 'ccy2_amount', label: '货币2金额(万)', sortable: true, width: '120px', align: 'right' as const },
+  { key: 'trade_date', label: '交易日', sortable: true, width: '100px' },
+  { key: 'value_date', label: '起息日', sortable: true, width: '100px' },
+  { key: 'counterparty_name', label: '对手方', width: '120px' },
+  { key: 'delivery_status', label: '交割状态', width: '80px' },
+])
+
 onMounted(() => {
   store.loadTrades()
+  spotStore.loadTrades()
   loadColumnMapping()
 })
 
 watch(search, (val) => {
   store.setFilters({ search: val })
   selectedIds.value = []
+})
+
+watch(spotSearch, (val) => {
+  spotStore.setFilters({ search: val })
+  spotSelectedIds.value = []
 })
 
 function onSort(col: string) {
@@ -208,6 +291,15 @@ function onSort(col: string) {
 function onRowClick(row: Record<string, unknown>) {
   const trade = row as unknown as Trade
   router.push(`/trades/${trade.id}`)
+}
+
+function onSpotSort(col: string) {
+  const order = spotStore.filters.sort_by === col && spotStore.filters.sort_order === 'asc' ? 'desc' : 'asc'
+  spotStore.setFilters({ sort_by: col, sort_order: order })
+}
+
+function onSpotRowClick(row: Record<string, unknown>) {
+  // Spot trades have no detail page; click does nothing for now
 }
 
 // --- Import ---
@@ -222,11 +314,17 @@ async function handleUpload() {
   if (!importFile.value) return
   importLoading.value = true
   try {
-    const result = await uploadFile(importFile.value)
+    const result = importType.value === 'spot'
+      ? await uploadSpotFile(importFile.value)
+      : await uploadFile(importFile.value)
     importResult.value = result
     const msg = `导入完成: ${result.imported_rows} 行成功, ${result.skipped_rows} 跳过, ${result.error_rows} 错误`
     ui.addNotification(result.status === 'success' ? 'success' : 'warning', msg)
-    store.loadTrades()
+    if (importType.value === 'spot') {
+      spotStore.loadTrades()
+    } else {
+      store.loadTrades()
+    }
   } catch (e: unknown) {
     ui.addNotification('error', e instanceof Error ? e.message : '导入失败')
   } finally {
@@ -238,6 +336,10 @@ async function loadColumnMapping() {
   try {
     const result = await getColumnMapping()
     columnMapping.value = result.mapping
+  } catch { /* ignore */ }
+  try {
+    const result = await getSpotColumnMappingApi()
+    spotColumnMapping.value = result.mapping
   } catch { /* ignore */ }
 }
 
@@ -306,8 +408,73 @@ async function submitForm() {
   }
 }
 
+// --- Spot trade CRUD ---
+function openSpotCreateModal() {
+  spotModalMode.value = 'create'
+  spotForm.value = { ...emptySpotForm }
+  spotEditingId.value = null
+  spotFormPortfolioId.value = null
+  spotFormError.value = null
+  showSpotModal.value = true
+}
+
+function openSpotEditModal(trade: SpotTrade) {
+  spotModalMode.value = 'edit'
+  spotEditingId.value = trade.id
+  spotFormPortfolioId.value = trade.portfolio_id
+  spotForm.value = {
+    trade_id: trade.trade_id,
+    ccy_pair: trade.ccy_pair,
+    direction: trade.direction,
+    event_type: trade.event_type,
+    deal_price: trade.deal_price,
+    ccy1_amount: trade.ccy1_amount,
+    ccy2_amount: trade.ccy2_amount,
+    trade_date: trade.trade_date,
+    value_date: trade.value_date,
+    counterparty_name: trade.counterparty_name,
+    portfolio_name: trade.portfolio_name,
+    delivery_status: trade.delivery_status,
+    source: trade.source,
+    venue: trade.venue,
+  }
+  spotFormError.value = null
+  showSpotModal.value = true
+}
+
+async function submitSpotForm() {
+  spotFormLoading.value = true
+  spotFormError.value = null
+  const payload = { ...spotForm.value, portfolio_id: spotFormPortfolioId.value }
+  try {
+    if (spotModalMode.value === 'create') {
+      await spotStore.addTrade(payload as SpotTradeCreate)
+      ui.addNotification('success', '即期流水创建成功')
+    } else if (spotEditingId.value) {
+      await spotStore.saveTrade(spotEditingId.value, payload as SpotTradeUpdate)
+      ui.addNotification('success', '即期流水更新成功')
+    }
+    showSpotModal.value = false
+    spotStore.loadTrades()
+  } catch (e: unknown) {
+    spotFormError.value = e instanceof Error ? e.message : '操作失败'
+  } finally {
+    spotFormLoading.value = false
+  }
+}
+
+async function deleteSpotTrade(trade: SpotTrade) {
+  try {
+    await spotStore.removeTrade(trade.id)
+    ui.addNotification('success', '即期流水已删除')
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+  }
+}
+
 // --- Modal overlay click guard (prevents closing on drag from inside) ---
 const { onOverlayMousedown, onOverlayClick } = useModalGuard(showModal)
+const { onOverlayMousedown: onSpotOverlayMousedown, onOverlayClick: onSpotOverlayClick } = useModalGuard(showSpotModal)
 
 // Pagination
 const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size || 50))
@@ -404,13 +571,109 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
+
+      <!-- Spot trades section -->
+      <div class="section-divider">
+        <h2 class="section-title">即期流水</h2>
+      </div>
+
+      <div class="toolbar">
+        <SearchInput v-model="spotSearch" placeholder="搜索成交编号、货币对、对手方..." />
+        <div class="filter-group">
+          <select v-model="spotStore.filters.ccy_pair" @change="spotStore.setFilters({ ccy_pair: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">全部货币对</option>
+            <option value="USD/CNY">USD/CNY</option>
+            <option value="EUR/USD">EUR/USD</option>
+            <option value="EUR/CNY">EUR/CNY</option>
+            <option value="GBP/USD">GBP/USD</option>
+            <option value="USD/JPY">USD/JPY</option>
+          </select>
+          <select v-model="spotStore.filters.event_type" @change="spotStore.setFilters({ event_type: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">全部事件类型</option>
+            <option value="正常">正常</option>
+            <option value="期权行权衍生">期权行权衍生</option>
+          </select>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button v-if="spotSelectedIds.length > 0" class="btn-danger" @click="confirmSpotBatchDelete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          删除选中 ({{ spotSelectedIds.length }})
+        </button>
+        <button class="btn-primary" @click="openSpotCreateModal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建即期
+        </button>
+      </div>
+
+      <DataTable
+        :columns="spotColumns"
+        :rows="spotStore.trades as unknown as Record<string, unknown>[]"
+        :loading="spotStore.loading"
+        :sort-by="spotStore.filters.sort_by"
+        :sort-order="spotStore.filters.sort_order"
+        selectable
+        :selected-ids="spotSelectedIds"
+        row-key="id"
+        @sort="onSpotSort"
+        @row-click="onSpotRowClick"
+        @update:selected-ids="onSpotSelectionChange"
+      >
+        <template #cell-deal_price="{ row }">
+          <NumberDisplay :value="row.deal_price as number" :decimals="4" />
+        </template>
+        <template #cell-ccy1_amount="{ row }">
+          <NumberDisplay :value="toWan(row.ccy1_amount as number)" />
+        </template>
+        <template #cell-ccy2_amount="{ row }">
+          <NumberDisplay :value="toWan(row.ccy2_amount as number)" />
+        </template>
+        <template #cell-trade_date="{ row }">
+          {{ formatDate(row.trade_date as string) }}
+        </template>
+        <template #cell-value_date="{ row }">
+          {{ formatDate(row.value_date as string) }}
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="action-btns" @click.stop>
+            <button class="action-btn action-edit" title="编辑" @click="openSpotEditModal(row as unknown as SpotTrade)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="action-btn action-delete" title="删除" @click="deleteSpotTrade(row as unknown as SpotTrade)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+          </div>
+        </template>
+      </DataTable>
+
+      <!-- Spot pagination -->
+      <div class="pagination" v-if="spotStore.totalCount > 0">
+        <button class="page-btn" :disabled="spotStore.filters.page === 1" @click="spotStore.setPage((spotStore.filters.page || 1) - 1)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          上一页
+        </button>
+        <span class="page-info">第 <strong>{{ spotStore.filters.page }}</strong> / {{ Math.ceil(spotStore.totalCount / (spotStore.filters.page_size || 50)) }} 页 <span class="page-total">(共 {{ spotStore.totalCount }} 条)</span></span>
+        <button class="page-btn" :disabled="(spotStore.filters.page || 1) >= Math.ceil(spotStore.totalCount / (spotStore.filters.page_size || 50))" @click="spotStore.setPage((spotStore.filters.page || 1) + 1)">
+          下一页
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
     </template>
 
     <!-- ==================== Tab: Import ==================== -->
     <template v-if="activeTab === 'import'">
+      <div class="import-type-selector">
+        <label class="radio-label">
+          <input type="radio" v-model="importType" value="option" />
+          <span>期权 from ComStar</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" v-model="importType" value="spot" />
+          <span>即期 from ComStar</span>
+        </label>
+      </div>
       <div class="card upload-area">
         <h3>选择文件</h3>
-        <p class="card-subtitle">导入 COMSTAR 外汇期权 Excel/CSV 交易流水文件</p>
+        <p class="card-subtitle">{{ importType === 'spot' ? '导入 COMSTAR 外汇即期 Excel 交易流水文件' : '导入 COMSTAR 外汇期权 Excel/CSV 交易流水文件' }}</p>
         <div class="file-input-row">
           <div class="file-input-wrapper">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
@@ -460,10 +723,23 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
     <!-- ==================== Tab: Column Mapping ==================== -->
     <template v-if="activeTab === 'mapping'">
       <div class="card" v-if="Object.keys(columnMapping).length">
-        <h3>字段映射参考</h3>
-        <p class="card-subtitle">CSV 表头 → 数据库字段</p>
+        <h3>期权字段映射参考</h3>
+        <p class="card-subtitle">期权 CSV 表头 → 数据库字段</p>
         <div class="mapping-grid">
           <div v-for="(field, header) in columnMapping" :key="header" class="mapping-item">
+            <span class="csv-header">{{ header }}</span>
+            <span class="arrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+            <span class="db-field">{{ field }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" v-if="Object.keys(spotColumnMapping).length">
+        <h3>即期字段映射参考</h3>
+        <p class="card-subtitle">即期 Excel 表头 → 数据库字段</p>
+        <div class="mapping-grid">
+          <div v-for="(field, header) in spotColumnMapping" :key="header" class="mapping-item">
             <span class="csv-header">{{ header }}</span>
             <span class="arrow">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -600,6 +876,105 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
       </div>
     </Teleport>
 
+    <!-- ==================== Spot Trade Form Modal ==================== -->
+    <Teleport to="body">
+      <div v-if="showSpotModal" class="modal-overlay" @mousedown="onSpotOverlayMousedown" @click="onSpotOverlayClick">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>{{ spotModalMode === 'create' ? '新建即期流水' : '编辑即期流水' }}</h3>
+            <button class="modal-close" @click="showSpotModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="spotFormError" class="form-error">{{ spotFormError }}</div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label>成交编号 <span class="required">*</span></label>
+                <input v-model="spotForm.trade_id" :disabled="spotModalMode === 'edit'" placeholder="必填" />
+              </div>
+              <div class="form-field">
+                <label>货币对</label>
+                <select v-model="spotForm.ccy_pair">
+                  <option value="USD/CNY">USD/CNY</option>
+                  <option value="EUR/USD">EUR/USD</option>
+                  <option value="EUR/CNY">EUR/CNY</option>
+                  <option value="GBP/USD">GBP/USD</option>
+                  <option value="USD/JPY">USD/JPY</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>方向</label>
+                <select v-model="spotForm.direction">
+                  <option value="买入">买入</option>
+                  <option value="卖出">卖出</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>交易事件类型</label>
+                <select v-model="spotForm.event_type">
+                  <option value="正常">正常</option>
+                  <option value="期权行权衍生">期权行权衍生</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>成交价</label>
+                <input v-model.number="spotForm.deal_price" type="number" step="0.0001" placeholder="如 6.7813" />
+              </div>
+              <div class="form-field">
+                <label>货币1金额</label>
+                <input v-model.number="spotForm.ccy1_amount" type="number" step="1" placeholder="如 5000000" />
+              </div>
+              <div class="form-field">
+                <label>货币2金额</label>
+                <input v-model.number="spotForm.ccy2_amount" type="number" step="1" placeholder="如 -33906500" />
+              </div>
+              <div class="form-field">
+                <label>交易日</label>
+                <input v-model="spotForm.trade_date" type="date" />
+              </div>
+              <div class="form-field">
+                <label>起息日</label>
+                <input v-model="spotForm.value_date" type="date" />
+              </div>
+              <div class="form-field">
+                <label>对手方</label>
+                <input v-model="spotForm.counterparty_name" placeholder="对手方名称" />
+              </div>
+              <div class="form-field">
+                <label>投组</label>
+                <PortfolioAutocomplete
+                  :model-value="spotForm.portfolio_name ?? ''"
+                  placeholder="搜索并选择投组..."
+                  @update:model-value="(v: string | null) => spotForm.portfolio_name = v"
+                  @update:portfolio-id="(v: number | null) => spotFormPortfolioId = v"
+                />
+              </div>
+              <div class="form-field">
+                <label>交割状态</label>
+                <select v-model="spotForm.delivery_status">
+                  <option value="未交割">未交割</option>
+                  <option value="已交割">已交割</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>来源</label>
+                <input v-model="spotForm.source" placeholder="如 CSTP下载交易" />
+              </div>
+              <div class="form-field">
+                <label>交易场所</label>
+                <input v-model="spotForm.venue" placeholder="如 CFETS" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="showSpotModal = false">取消</button>
+            <button class="btn-primary" :disabled="spotFormLoading" @click="submitSpotForm">
+              {{ spotFormLoading ? '提交中...' : '确认' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- ==================== Batch Delete Confirmation ==================== -->
     <Teleport to="body">
       <div v-if="showBatchDeleteConfirm" class="modal-overlay" @click.self="cancelBatchDelete">
@@ -618,11 +993,65 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         </div>
       </div>
     </Teleport>
+
+    <!-- ==================== Spot Batch Delete Confirmation ==================== -->
+    <Teleport to="body">
+      <div v-if="showSpotBatchDeleteConfirm" class="modal-overlay" @click.self="cancelSpotBatchDelete">
+        <div class="modal modal-sm">
+          <div class="modal-header">
+            <h3>确认批量删除</h3>
+            <button class="modal-close" @click="cancelSpotBatchDelete">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>确定要删除选中的 <strong>{{ spotSelectedIds.length }}</strong> 条即期流水吗？此操作不可撤销。</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="cancelSpotBatchDelete">取消</button>
+            <button class="btn-danger" @click="doSpotBatchDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .page-header { margin-bottom: 1.25rem; }
+
+/* Section divider for spot trades in list tab */
+.section-divider {
+  margin: 1.5rem 0 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--color-border);
+}
+.section-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+/* Import type selector */
+.import-type-selector {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+.radio-label input[type="radio"] {
+  accent-color: var(--color-primary);
+}
 
 /* Tabs */
 .tabs {

@@ -16,6 +16,7 @@ class ImportLog(SQLModel, table=True):
     skipped_rows: int = 0
     error_rows: int = 0
     status: str = Field(default="pending", max_length=20)  # pending/processing/success/partial/failed
+    import_type: str = Field(default="option", max_length=20)  # "option" or "spot"
     error_message: str | None = Field(default=None)
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)

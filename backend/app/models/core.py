@@ -18,8 +18,9 @@ class Portfolio(SQLModel, table=True):
     name: str = Field(max_length=200, index=True, unique=True)
     description: str | None = Field(default=None, max_length=500)
 
-    # One-to-many: Portfolio has many Trades
+    # One-to-many: Portfolio has many Trades and SpotTrades
     trades: list["Trade"] = Relationship(back_populates="portfolio")
+    spot_trades: list["SpotTrade"] = Relationship(back_populates="portfolio")
 
 
 class Counterparty(SQLModel, table=True):
@@ -30,6 +31,7 @@ class Counterparty(SQLModel, table=True):
     short_name: str | None = Field(default=None, max_length=100)
 
     trades: list["Trade"] = Relationship(back_populates="counterparty")
+    spot_trades: list["SpotTrade"] = Relationship(back_populates="counterparty")
 
 
 class Trade(SQLModel, table=True):
@@ -195,6 +197,52 @@ class Trade(SQLModel, table=True):
             if len(parts) == 2 and v not in parts:
                 raise ValueError("premium_currency must be one of the currencies in ccy_pair")
         return v
+
+
+class SpotTrade(SQLModel, table=True):
+    __tablename__ = "spot_trades"
+
+    id: int | None = Field(default=None, primary_key=True)
+    trade_id: str = Field(max_length=200, index=True)
+
+    # Foreign Keys (reuse Portfolio, Counterparty)
+    portfolio_id: int | None = Field(default=None, foreign_key="portfolios.id", index=True)
+    counterparty_id: int | None = Field(default=None, foreign_key="counterparties.id", index=True)
+
+    # Denormalized names for import convenience
+    portfolio_name: str | None = Field(default=None, max_length=200)
+    counterparty_name: str | None = Field(default=None, max_length=300)
+
+    # Trade details
+    ccy_pair: str | None = Field(default=None, max_length=20)
+    direction: str | None = Field(default=None, max_length=20)
+    event_type: str | None = Field(default=None, max_length=50)
+
+    deal_price: float | None = Field(default=None)
+    ccy1_amount: float | None = Field(default=None)
+    ccy2_amount: float | None = Field(default=None)
+
+    # Derived from ccy_pair on import
+    ccy1: str | None = Field(default=None, max_length=10)
+    ccy2: str | None = Field(default=None, max_length=10)
+
+    # Dates
+    trade_date: date | None = Field(default=None)
+    value_date: date | None = Field(default=None)
+
+    # Status and meta
+    delivery_status: str | None = Field(default=None, max_length=50)
+    source: str | None = Field(default=None, max_length=100)
+    venue: str | None = Field(default=None, max_length=50)
+    created_timestamp: datetime | None = Field(default=None)
+
+    # System timestamps
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    portfolio: Portfolio = Relationship(back_populates="spot_trades")
+    counterparty: Counterparty = Relationship(back_populates="spot_trades")
 
 
 class CalculationResult(SQLModel, table=True):
