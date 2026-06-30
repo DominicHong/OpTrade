@@ -23,7 +23,6 @@ export interface SpotTrade {
   value_date: string | null
 
   // Status and meta
-  delivery_status: string | null
   source: string | null
   venue: string | null
 
@@ -54,7 +53,6 @@ export interface SpotTradeFilterParams {
   value_date_from?: string
   value_date_to?: string
   search?: string
-  delivery_status?: string
 }
 
 export interface SpotTradeCreate {
@@ -70,7 +68,6 @@ export interface SpotTradeCreate {
   ccy2_amount?: number | null
   trade_date?: string | null
   value_date?: string | null
-  delivery_status?: string | null
   source?: string | null
   venue?: string | null
 }
@@ -88,7 +85,6 @@ export interface SpotTradeUpdate {
   ccy2_amount?: number | null
   trade_date?: string | null
   value_date?: string | null
-  delivery_status?: string | null
   source?: string | null
   venue?: string | null
 }

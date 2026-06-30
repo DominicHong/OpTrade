@@ -89,7 +89,6 @@ CSV_TO_OPTION_TRADE_FIELD: dict[str, str] = {
     "行权衍生的交易品种": "exercise_derivative_product",
     # Delivery
     "交割类型": "delivery_type",
-    "交割状态": "delivery_status",
     "交割货币": "delivery_currency",
     "交割参考汇率": "delivery_reference_rate",
     "交割轧差汇率": "delivery_netting_rate",

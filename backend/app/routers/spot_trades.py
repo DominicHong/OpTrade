@@ -103,7 +103,6 @@ def list_spot_trades(
     value_date_from: date | None = Query(default=None),
     value_date_to: date | None = Query(default=None),
     search: str | None = Query(default=None),
-    delivery_status: str | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> SpotTradeListResponse:
     """List spot trades with pagination, filtering, and sorting."""
@@ -138,9 +137,6 @@ def list_spot_trades(
     if value_date_to:
         query = query.where(SpotTrade.value_date <= value_date_to)
         count_query = count_query.where(SpotTrade.value_date <= value_date_to)
-    if delivery_status:
-        query = query.where(SpotTrade.delivery_status == delivery_status)
-        count_query = count_query.where(SpotTrade.delivery_status == delivery_status)
     if search:
         search_term = f"%{search}%"
         query = query.where(

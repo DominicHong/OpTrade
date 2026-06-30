@@ -38,7 +38,6 @@ CSV_TO_SPOT_FIELD: dict[str, str] = {
     "创建时间": "created_timestamp",
 
     # Status & meta
-    "交割状态": "delivery_status",
     "来源": "source",
     "交易场所": "venue",
 }

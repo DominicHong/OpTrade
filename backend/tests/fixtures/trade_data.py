@@ -27,7 +27,6 @@ def create_sample_option_trade(**overrides) -> OptionTrade:
         "counterparty_name": "示例银行A(SAMPLEA)",
         "venue": "CFETS",
         "exercise_status": "未行权",
-        "delivery_status": "未交割",
         "option_category": "fx_vanilla",
     }
     defaults.update(overrides)

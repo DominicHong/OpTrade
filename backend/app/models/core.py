@@ -179,7 +179,6 @@ class OptionTrade(SQLModel, table=True):
 
     # === Delivery ===
     delivery_type: str | None = Field(default=None, max_length=50)
-    delivery_status: str | None = Field(default=None, max_length=50)
     delivery_currency: str | None = Field(default=None, max_length=10)
     delivery_reference_rate: float | None = Field(default=None)
     delivery_netting_rate: float | None = Field(default=None)
@@ -276,7 +275,6 @@ class SpotTrade(SQLModel, table=True):
     value_date: date | None = Field(default=None)
 
     # Status and meta
-    delivery_status: str | None = Field(default=None, max_length=50)
     source: str | None = Field(default=None, max_length=100)
     venue: str | None = Field(default=None, max_length=50)
     created_timestamp: datetime | None = Field(default=None)

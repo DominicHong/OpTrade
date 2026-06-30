@@ -43,7 +43,6 @@ export interface OptionTrade {
 
   // Status
   exercise_status: string | null
-  delivery_status: string | null
   effective_status: string | null
   allocation_status: string | null
 
@@ -119,7 +118,6 @@ export interface OptionTradeCreate {
   spot_rate?: number | null
   volatility?: number | null
   exercise_status?: string | null
-  delivery_status?: string | null
   effective_status?: string | null
   allocation_status?: string | null
   venue?: string | null
@@ -160,7 +158,6 @@ export interface OptionTradeUpdate {
   spot_rate?: number | null
   volatility?: number | null
   exercise_status?: string | null
-  delivery_status?: string | null
   effective_status?: string | null
   allocation_status?: string | null
   venue?: string | null

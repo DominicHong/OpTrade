@@ -89,7 +89,6 @@ function goBack() { router.push('/option-trades') }
           <h3>状态 & 对手方</h3>
           <dl>
             <dt>行权状态</dt><dd>{{ store.currentTrade.exercise_status || '--' }}</dd>
-            <dt>交割状态</dt><dd>{{ store.currentTrade.delivery_status || '--' }}</dd>
             <dt>对手方</dt><dd>{{ store.currentTrade.counterparty_name || '--' }}</dd>
             <dt>交易场所</dt><dd>{{ store.currentTrade.venue || '--' }}</dd>
             <dt>清算方式</dt><dd>{{ store.currentTrade.clearing_method || '--' }}</dd>

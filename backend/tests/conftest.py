@@ -87,7 +87,6 @@ def sample_trade_fixture() -> dict:
         "counterparty_name": "示例银行A(SAMPLEA)",
         "venue": "CFETS",
         "exercise_status": "未行权",
-        "delivery_status": "未交割",
         "tenor": "BROKEN",
         "timezone": "Beijing",
         "option_category": "fx_vanilla",

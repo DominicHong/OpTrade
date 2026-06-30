@@ -28,7 +28,6 @@ class SpotTradeBase(BaseModel):
     value_date: date | None = None
 
     # Status and meta
-    delivery_status: str | None = None
     source: str | None = None
     venue: str | None = None
 
@@ -82,4 +81,3 @@ class SpotTradeFilterParams(BaseModel):
     value_date_from: date | None = None
     value_date_to: date | None = None
     search: str | None = None
-    delivery_status: str | None = None

@@ -49,7 +49,6 @@ class OptionTradeBase(BaseModel):
 
     # Status
     exercise_status: str | None = None
-    delivery_status: str | None = None
     effective_status: str | None = None
     allocation_status: str | None = None
 

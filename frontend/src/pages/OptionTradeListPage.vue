@@ -65,7 +65,6 @@ const emptySpotForm: SpotTradeCreate = {
   value_date: null,
   counterparty_name: null,
   portfolio_name: null,
-  delivery_status: null,
   source: null,
   venue: null,
 }
@@ -247,7 +246,6 @@ const columns = computed<TableColumn[]>(() => {
     { key: 'expiry_date', label: '到期日', sortable: true, width: '100px' },
     { key: 'counterparty_name', label: '对手方', width: '120px' },
     { key: 'exercise_status', label: '行权状态', width: '80px' },
-    { key: 'delivery_status', label: '交割状态', width: '80px' },
   ]
 })
 
@@ -264,7 +262,6 @@ const spotColumns = computed<TableColumn[]>(() => [
   { key: 'trade_date', label: '交易日', sortable: true, width: '100px' },
   { key: 'value_date', label: '起息日', sortable: true, width: '100px' },
   { key: 'counterparty_name', label: '对手方', width: '120px' },
-  { key: 'delivery_status', label: '交割状态', width: '80px' },
 ])
 
 onMounted(() => {
@@ -377,7 +374,6 @@ function openEditModal(trade: OptionTrade) {
     premium_amount: trade.premium_amount,
     premium_currency: trade.premium_currency,
     exercise_status: trade.exercise_status,
-    delivery_status: trade.delivery_status,
     comments: trade.comments,
   }
   formError.value = null
@@ -434,7 +430,6 @@ function openSpotEditModal(trade: SpotTrade) {
     value_date: trade.value_date,
     counterparty_name: trade.counterparty_name,
     portfolio_name: trade.portfolio_name,
-    delivery_status: trade.delivery_status,
     source: trade.source,
     venue: trade.venue,
   }
@@ -853,13 +848,6 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
                   <option value="过期未行权">过期未行权</option>
                 </select>
               </div>
-              <div class="form-field">
-                <label>交割状态</label>
-                <select v-model="form.delivery_status">
-                  <option value="未交割">未交割</option>
-                  <option value="已交割">已交割</option>
-                </select>
-              </div>
               <div class="form-field form-field--full">
                 <label>备注</label>
                 <input v-model="form.comments" placeholder="备注信息" />
@@ -947,13 +935,6 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
                   @update:model-value="(v: string | null) => spotForm.portfolio_name = v"
                   @update:portfolio-id="(v: number | null) => spotFormPortfolioId = v"
                 />
-              </div>
-              <div class="form-field">
-                <label>交割状态</label>
-                <select v-model="spotForm.delivery_status">
-                  <option value="未交割">未交割</option>
-                  <option value="已交割">已交割</option>
-                </select>
               </div>
               <div class="form-field">
                 <label>来源</label>
