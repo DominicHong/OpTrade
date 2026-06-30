@@ -8,7 +8,7 @@ const ui = useUiStore()
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: 'dashboard' },
-  { path: '/trades', label: '交易管理', icon: 'trades' },
+  { path: '/option-trades', label: '交易管理', icon: 'trades' },
   { path: '/portfolios', label: '投组管理', icon: 'portfolios' },
   { path: '/curves', label: '曲线管理', icon: 'curves' },
   { path: '/portfolio', label: '组合分析', icon: 'portfolio' },

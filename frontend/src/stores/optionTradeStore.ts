@@ -1,35 +1,35 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Trade, TradeCreate, TradeFilterParams, TradeUpdate } from '@/types/trade'
-import { fetchTrades, fetchTrade, createTrade as apiCreateTrade, updateTrade as apiUpdateTrade, deleteTrade as apiDeleteTrade, batchDeleteTrades as apiBatchDelete } from '@/api/trades'
+import type { OptionTrade, OptionTradeCreate, OptionTradeFilterParams, OptionTradeUpdate } from '@/types/optionTrade'
+import { fetchOptionTrades, fetchOptionTrade, createOptionTrade as apiCreateOptionTrade, updateOptionTrade as apiUpdateOptionTrade, deleteOptionTrade as apiDeleteOptionTrade, batchDeleteOptionTrades as apiBatchDelete } from '@/api/optionTrades'
 
-export const useTradeStore = defineStore('trade', () => {
-  const trades = ref<Trade[]>([])
-  const currentTrade = ref<Trade | null>(null)
+export const useOptionTradeStore = defineStore('optionTrade', () => {
+  const trades = ref<OptionTrade[]>([])
+  const currentTrade = ref<OptionTrade | null>(null)
   const totalCount = ref(0)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   // Current filters
-  const filters = ref<TradeFilterParams>({
+  const filters = ref<OptionTradeFilterParams>({
     page: 1,
     page_size: 50,
     sort_by: 'trade_id',
     sort_order: 'asc',
   })
 
-  async function loadTrades(params?: TradeFilterParams) {
+  async function loadTrades(params?: OptionTradeFilterParams) {
     loading.value = true
     error.value = null
     try {
       if (params) {
         filters.value = { ...filters.value, ...params }
       }
-      const result = await fetchTrades(filters.value)
+      const result = await fetchOptionTrades(filters.value)
       trades.value = result.data
       totalCount.value = result.total
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Failed to load trades'
+      error.value = e instanceof Error ? e.message : 'Failed to load option trades'
     } finally {
       loading.value = false
     }
@@ -39,22 +39,22 @@ export const useTradeStore = defineStore('trade', () => {
     loading.value = true
     error.value = null
     try {
-      currentTrade.value = await fetchTrade(id)
+      currentTrade.value = await fetchOptionTrade(id)
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Failed to load trade'
+      error.value = e instanceof Error ? e.message : 'Failed to load option trade'
     } finally {
       loading.value = false
     }
   }
 
-  async function addTrade(payload: TradeCreate) {
-    const created = await apiCreateTrade(payload)
+  async function addTrade(payload: OptionTradeCreate) {
+    const created = await apiCreateOptionTrade(payload)
     totalCount.value += 1
     return created
   }
 
-  async function saveTrade(id: number, payload: TradeUpdate) {
-    const updated = await apiUpdateTrade(id, payload)
+  async function saveTrade(id: number, payload: OptionTradeUpdate) {
+    const updated = await apiUpdateOptionTrade(id, payload)
     const idx = trades.value.findIndex(t => t.id === id)
     if (idx >= 0) trades.value[idx] = updated
     if (currentTrade.value?.id === id) currentTrade.value = updated
@@ -62,7 +62,7 @@ export const useTradeStore = defineStore('trade', () => {
   }
 
   async function removeTrade(id: number) {
-    await apiDeleteTrade(id)
+    await apiDeleteOptionTrade(id)
     trades.value = trades.value.filter(t => t.id !== id)
     totalCount.value -= 1
     if (currentTrade.value?.id === id) currentTrade.value = null
@@ -82,7 +82,7 @@ export const useTradeStore = defineStore('trade', () => {
     loadTrades()
   }
 
-  function setFilters(newFilters: Partial<TradeFilterParams>) {
+  function setFilters(newFilters: Partial<OptionTradeFilterParams>) {
     filters.value = { ...filters.value, ...newFilters, page: 1 }
     loadTrades()
   }

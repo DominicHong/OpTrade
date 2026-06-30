@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import type { EditableTradeParams } from '@/composables/useGreeksCalculation'
+import type { EditableOptionTradeParams } from '@/composables/useGreeksCalculation'
 import type { CurveDefinition } from '@/types/curve'
 
 const props = defineProps<{
   valuationDate: string
   curveType: string | null
-  tradeParams: EditableTradeParams[]
+  tradeParams: EditableOptionTradeParams[]
   curveDefinitions: CurveDefinition[]
   loading: boolean
   resolving: boolean

@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Portfolio, Trade
+from app.models import Portfolio, OptionTrade
 from app.schemas.portfolio import (
     PortfolioCreate,
     PortfolioGreeksRequest,
@@ -15,9 +15,9 @@ from app.schemas.portfolio import (
     PortfolioResolveRequest,
     PortfolioResolveResponse,
     PortfolioUpdate,
-    TradeGreeksDetail,
-    TradeParamsOverride,
-    TradeParamsResolved,
+    OptionTradeGreeksDetail,
+    OptionTradeParamsOverride,
+    OptionTradeParamsResolved,
 )
 from app.services.greeks_service import GreeksService
 from app.services.curve_service import CurveService, get_curve_service
@@ -89,7 +89,7 @@ class PortfolioService:
 
     def _trade_count(self, session: Session, portfolio_id: int) -> int:
         return session.exec(
-            select(func.count(Trade.id)).where(Trade.portfolio_id == portfolio_id)
+            select(func.count(OptionTrade.id)).where(OptionTrade.portfolio_id == portfolio_id)
         ).one()
 
     def _to_read(self, session: Session, portfolio: Portfolio) -> PortfolioRead:
@@ -150,7 +150,7 @@ class PortfolioService:
         if count > 0:
             raise HTTPException(
                 status_code=409,
-                detail=f"Cannot delete portfolio with {count} trades. Reassign or delete trades first.",
+                detail=f"Cannot delete portfolio with {count} option trades. Reassign or delete trades first.",
             )
 
         session.delete(portfolio)
@@ -166,20 +166,20 @@ class PortfolioService:
         portfolio_id: int,
         request: PortfolioResolveRequest,
     ) -> PortfolioResolveResponse:
-        """Resolve curve parameters for every trade in a portfolio."""
+        """Resolve curve parameters for every option trade in a portfolio."""
         portfolio = session.get(Portfolio, portfolio_id)
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
-        trades = session.exec(
-            select(Trade).where(Trade.portfolio_id == portfolio_id)
+        option_trades = session.exec(
+            select(OptionTrade).where(OptionTrade.portfolio_id == portfolio_id)
         ).all()
 
-        resolved_trades: list[TradeParamsResolved] = []
+        resolved_trades: list[OptionTradeParamsResolved] = []
         valuation_date = request.valuation_date
 
-        for trade in trades:
-            base: TradeParamsResolved = TradeParamsResolved(
+        for trade in option_trades:
+            base: OptionTradeParamsResolved = OptionTradeParamsResolved(
                 trade_id=trade.id,
                 trade_id_str=trade.trade_id,
                 ccy_pair=trade.ccy_pair,
@@ -238,13 +238,13 @@ class PortfolioService:
     def _resolve_params_for_trade(
         self,
         session: Session,
-        trade: Trade,
+        trade: OptionTrade,
         valuation_date: date,
-        override: TradeParamsOverride | None,
+        override: OptionTradeParamsOverride | None,
         curve_type: str | None,
         curve_valuation_date: date | None,
     ) -> tuple[float, float, float, float, date | None]:
-        """Resolve (spot, vol, rf_base, rf_quote, curve_date) for a single trade.
+        """Resolve (spot, vol, rf_base, rf_quote, curve_date) for a single option trade.
 
         Priority chain per field (highest first):
           1. User override from *override* (if not None)
@@ -303,21 +303,21 @@ class PortfolioService:
         portfolio_id: int,
         request: PortfolioGreeksRequest,
     ) -> PortfolioGreeksResponse:
-        """Calculate aggregated Greeks for all trades in a portfolio."""
+        """Calculate aggregated Greeks for all option trades in a portfolio."""
         portfolio = session.get(Portfolio, portfolio_id)
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
-        trades = session.exec(
-            select(Trade).where(Trade.portfolio_id == portfolio_id)
+        option_trades = session.exec(
+            select(OptionTrade).where(OptionTrade.portfolio_id == portfolio_id)
         ).all()
 
         # Build override lookup
-        override_map: dict[int, TradeParamsOverride] = {}
+        override_map: dict[int, OptionTradeParamsOverride] = {}
         for tp in request.trade_params:
             override_map[tp.trade_id] = tp
 
-        if not trades:
+        if not option_trades:
             return PortfolioGreeksResponse(
                 portfolio_id=portfolio_id,
                 portfolio_name=portfolio.name,
@@ -331,12 +331,12 @@ class PortfolioService:
         total_gamma = 0.0
         total_npv = 0.0
         total_profit = 0.0
-        trade_details: list[TradeGreeksDetail] = []
+        trade_details: list[OptionTradeGreeksDetail] = []
 
-        for trade in trades:
+        for trade in option_trades:
             if not all([trade.strike, trade.expiry_date, trade.trade_type, trade.direction]):
                 trade_details.append(
-                    TradeGreeksDetail(
+                    OptionTradeGreeksDetail(
                         trade_id=trade.id,
                         trade_id_str=trade.trade_id,
                         ccy_pair=trade.ccy_pair,
@@ -373,7 +373,7 @@ class PortfolioService:
 
             if greeks.get("error"):
                 trade_details.append(
-                    TradeGreeksDetail(
+                    OptionTradeGreeksDetail(
                         trade_id=trade.id,
                         trade_id_str=trade.trade_id,
                         ccy_pair=trade.ccy_pair,
@@ -421,7 +421,7 @@ class PortfolioService:
                 total_profit += profit_per_unit * notional
 
             trade_details.append(
-                TradeGreeksDetail(
+                OptionTradeGreeksDetail(
                     trade_id=trade.id,
                     trade_id_str=trade.trade_id,
                     ccy_pair=trade.ccy_pair,
@@ -439,26 +439,26 @@ class PortfolioService:
 
         # Representative params for the response — use the first trade's resolved values
         rep_rf_base = override_map.get(
-            trades[0].id,
-            TradeParamsOverride(trade_id=trades[0].id),
+            option_trades[0].id,
+            OptionTradeParamsOverride(trade_id=option_trades[0].id),
         ).rf_rate_base
         rep_rf_quote = override_map.get(
-            trades[0].id,
-            TradeParamsOverride(trade_id=trades[0].id),
+            option_trades[0].id,
+            OptionTradeParamsOverride(trade_id=option_trades[0].id),
         ).rf_rate_quote
         rep_spot = override_map.get(
-            trades[0].id,
-            TradeParamsOverride(trade_id=trades[0].id),
+            option_trades[0].id,
+            OptionTradeParamsOverride(trade_id=option_trades[0].id),
         ).spot
         rep_vol = override_map.get(
-            trades[0].id,
-            TradeParamsOverride(trade_id=trades[0].id),
+            option_trades[0].id,
+            OptionTradeParamsOverride(trade_id=option_trades[0].id),
         ).volatility
 
         return PortfolioGreeksResponse(
             portfolio_id=portfolio_id,
             portfolio_name=portfolio.name,
-            trade_count=len(trades),
+            trade_count=len(option_trades),
             total_delta=round(total_delta, 6),
             total_gamma=round(total_gamma, 6),
             total_npv=round(total_npv, 6),

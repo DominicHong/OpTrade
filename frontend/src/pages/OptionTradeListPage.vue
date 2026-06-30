@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useTradeStore } from '@/stores/tradeStore'
+import { useOptionTradeStore } from '@/stores/optionTradeStore'
 import { useSpotTradeStore } from '@/stores/spotTradeStore'
 import { useUiStore } from '@/stores/uiStore'
 import { uploadFile, getColumnMapping } from '@/api/imports'
@@ -12,14 +12,14 @@ import NumberDisplay from '@/components/shared/NumberDisplay.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 import PortfolioAutocomplete from '@/components/trade/PortfolioAutocomplete.vue'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
-import type { Trade, TradeCreate, TradeUpdate } from '@/types/trade'
+import type { OptionTrade, OptionTradeCreate, OptionTradeUpdate } from '@/types/optionTrade'
 import type { SpotTrade, SpotTradeCreate, SpotTradeUpdate } from '@/types/spotTrade'
 import type { ImportConfirmResponse } from '@/types/api'
 import { formatDate, toWan } from '@/utils/format'
 import { useModalGuard } from '@/composables/useModalGuard'
 
 const router = useRouter()
-const store = useTradeStore()
+const store = useOptionTradeStore()
 const spotStore = useSpotTradeStore()
 const ui = useUiStore()
 const search = ref('')
@@ -72,7 +72,7 @@ const emptySpotForm: SpotTradeCreate = {
 
 const spotForm = ref<SpotTradeCreate | SpotTradeUpdate>({ ...emptySpotForm })
 
-const emptyForm: TradeCreate = {
+const emptyForm: OptionTradeCreate = {
   trade_id: '',
   ccy_pair: 'USD/CNY',
   trade_type: 'CALL',
@@ -90,7 +90,7 @@ const emptyForm: TradeCreate = {
   premium_currency: null,
 }
 
-const form = ref<TradeCreate | TradeUpdate>({ ...emptyForm })
+const form = ref<OptionTradeCreate | OptionTradeUpdate>({ ...emptyForm })
 const editingTradeId = ref<number | null>(null)
 const formPortfolioId = ref<number | null>(null)
 
@@ -289,8 +289,8 @@ function onSort(col: string) {
 }
 
 function onRowClick(row: Record<string, unknown>) {
-  const trade = row as unknown as Trade
-  router.push(`/trades/${trade.id}`)
+  const trade = row as unknown as OptionTrade
+  router.push(`/option-trades/${trade.id}`)
 }
 
 function onSpotSort(col: string) {
@@ -353,7 +353,7 @@ function openCreateModal() {
   showModal.value = true
 }
 
-function openEditModal(trade: Trade) {
+function openEditModal(trade: OptionTrade) {
   modalMode.value = 'edit'
   editingTradeId.value = trade.id
   formPortfolioId.value = trade.portfolio_id
@@ -393,10 +393,10 @@ async function submitForm() {
   }
   try {
     if (modalMode.value === 'create') {
-      await store.addTrade(payload as TradeCreate)
+      await store.addTrade(payload as OptionTradeCreate)
       ui.addNotification('success', '交易创建成功')
     } else if (editingTradeId.value) {
-      await store.saveTrade(editingTradeId.value, payload as TradeUpdate)
+      await store.saveTrade(editingTradeId.value, payload as OptionTradeUpdate)
       ui.addNotification('success', '交易更新成功')
     }
     showModal.value = false
@@ -552,7 +552,7 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         </template>
         <template #cell-actions="{ row }">
           <div class="action-btns" @click.stop>
-            <button class="action-btn action-edit" title="编辑" @click="openEditModal(row as unknown as Trade)">
+            <button class="action-btn action-edit" title="编辑" @click="openEditModal(row as unknown as OptionTrade)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           </div>

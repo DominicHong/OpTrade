@@ -3,7 +3,7 @@ Pytest fixtures for OpTrade tests.
 
 Provides:
   - File-based SQLite test database (avoids in-memory connection issues)
-  - Sample trade data
+  - Sample option trade data
   - Test client for FastAPI
 """
 
@@ -67,7 +67,7 @@ def client_fixture(engine):
 
 @pytest.fixture(name="sample_trade_data")
 def sample_trade_fixture() -> dict:
-    """Return a sample trade dict for creating test records."""
+    """Return a sample option trade dict for creating test records."""
     return {
         "trade_id": "TEST-001",
         "source_trade_id": "SRC-001",
@@ -90,4 +90,5 @@ def sample_trade_fixture() -> dict:
         "delivery_status": "未交割",
         "tenor": "BROKEN",
         "timezone": "Beijing",
+        "option_category": "fx_vanilla",
     }

@@ -33,7 +33,7 @@ export interface PortfolioResolveRequest {
   curve_type: string
 }
 
-export interface TradeParamsResolved {
+export interface OptionTradeParamsResolved {
   trade_id: number
   trade_id_str: string | null
   ccy_pair: string | null
@@ -54,14 +54,14 @@ export interface TradeParamsResolved {
 export interface PortfolioResolveResponse {
   valuation_date: string
   curve_type: string
-  trades: TradeParamsResolved[]
+  trades: OptionTradeParamsResolved[]
 }
 
 // ---------------------------------------------------------------------------
-// Per-trade parameter overrides
+// Per-option-trade parameter overrides
 // ---------------------------------------------------------------------------
 
-export interface TradeParamsOverride {
+export interface OptionTradeParamsOverride {
   trade_id: number
   rf_rate_base: number | null
   rf_rate_quote: number | null
@@ -76,10 +76,10 @@ export interface TradeParamsOverride {
 export interface PortfolioGreeksRequest {
   valuation_date?: string | null
   curve_type?: string | null
-  trade_params?: TradeParamsOverride[]
+  trade_params?: OptionTradeParamsOverride[]
 }
 
-export interface TradeGreeksDetail {
+export interface OptionTradeGreeksDetail {
   trade_id: number
   trade_id_str: string | null
   ccy_pair: string | null
@@ -109,5 +109,5 @@ export interface PortfolioGreeksResponse {
   spot_used: number | null
   curve_type: string | null
   curve_valuation_date: string | null
-  trades: TradeGreeksDetail[]
+  trades: OptionTradeGreeksDetail[]
 }

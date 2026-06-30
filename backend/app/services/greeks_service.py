@@ -193,7 +193,7 @@ class GreeksService:
         valuation_date: date | None = None,
         expiry_date: date | None = None,
     ) -> dict:
-        """Convenience wrapper that matches the Trade model's field names."""
+        """Convenience wrapper that matches the OptionTrade model's field names."""
         return self.calculate_vanilla_greeks(
             option_type=option_type,
             direction=direction,

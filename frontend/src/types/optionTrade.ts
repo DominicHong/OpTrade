@@ -1,5 +1,5 @@
-/** Core Trade interface matching backend TradeRead schema. */
-export interface Trade {
+/** Core OptionTrade interface matching backend OptionTradeRead schema. */
+export interface OptionTrade {
   id: number
   trade_id: string
   source_trade_id: string | null
@@ -9,6 +9,9 @@ export interface Trade {
   counterparty_id: number | null
   portfolio_name: string | null
   counterparty_name: string | null
+
+  // Polymorphic discriminator
+  option_category: string
 
   // Option specs
   option_type: string | null
@@ -38,15 +41,6 @@ export interface Trade {
   spot_rate: number | null
   volatility: number | null
 
-  // Barrier
-  barrier_type: string | null
-  barrier_direction: string | null
-  barrier_level: number | null
-
-  // Asian
-  asian_sub_type: string | null
-  averaging_method: string | null
-
   // Status
   exercise_status: string | null
   delivery_status: string | null
@@ -70,14 +64,14 @@ export interface Trade {
   updated_at: string | null
 }
 
-export interface TradeListResponse {
-  data: Trade[]
+export interface OptionTradeListResponse {
+  data: OptionTrade[]
   total: number
   page: number
   page_size: number
 }
 
-export interface TradeFilterParams {
+export interface OptionTradeFilterParams {
   page?: number
   page_size?: number
   sort_by?: string
@@ -94,10 +88,12 @@ export interface TradeFilterParams {
   trade_date_to?: string
   search?: string
   exercise_status?: string
+  option_category?: string
 }
 
-export interface TradeCreate {
+export interface OptionTradeCreate {
   trade_id: string
+  option_category?: string
   source_trade_id?: string | null
   review_id?: string | null
   leg?: string | null
@@ -122,11 +118,6 @@ export interface TradeCreate {
   premium_currency?: string | null
   spot_rate?: number | null
   volatility?: number | null
-  barrier_type?: string | null
-  barrier_direction?: string | null
-  barrier_level?: number | null
-  asian_sub_type?: string | null
-  averaging_method?: string | null
   exercise_status?: string | null
   delivery_status?: string | null
   effective_status?: string | null
@@ -141,8 +132,9 @@ export interface TradeCreate {
   comments?: string | null
 }
 
-export interface TradeUpdate {
+export interface OptionTradeUpdate {
   trade_id?: string | null
+  option_category?: string
   source_trade_id?: string | null
   review_id?: string | null
   leg?: string | null
@@ -167,11 +159,6 @@ export interface TradeUpdate {
   premium_currency?: string | null
   spot_rate?: number | null
   volatility?: number | null
-  barrier_type?: string | null
-  barrier_direction?: string | null
-  barrier_level?: number | null
-  asian_sub_type?: string | null
-  averaging_method?: string | null
   exercise_status?: string | null
   delivery_status?: string | null
   effective_status?: string | null

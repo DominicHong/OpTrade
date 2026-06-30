@@ -1,8 +1,16 @@
 """
-Core SQLModel entities: Trade, Portfolio, Counterparty, CalculationResult.
+Core SQLModel entities: OptionTrade, Portfolio, Counterparty, CalculationResult.
 
 Consolidated into one file to avoid circular imports, since these models
 cross-reference each other via SQLAlchemy relationships.
+
+Option type extension pattern:
+  OptionTrade (base table)          — common fields + "fx_vanilla" by default
+  BarrierOptionDetails (child)       — barrier-specific fields, FK → option_trades.id
+  AsianOptionDetails (child)         — asian/averaging-specific fields, FK → option_trades.id
+
+Future option types (digital, compound, etc.) add new child tables with the same
+one-to-one FK pattern.
 """
 
 from datetime import date, datetime, timezone
@@ -18,8 +26,8 @@ class Portfolio(SQLModel, table=True):
     name: str = Field(max_length=200, index=True, unique=True)
     description: str | None = Field(default=None, max_length=500)
 
-    # One-to-many: Portfolio has many Trades and SpotTrades
-    trades: list["Trade"] = Relationship(back_populates="portfolio")
+    # One-to-many: Portfolio has many OptionTrades and SpotTrades
+    option_trades: list["OptionTrade"] = Relationship(back_populates="portfolio")
     spot_trades: list["SpotTrade"] = Relationship(back_populates="portfolio")
 
 
@@ -30,14 +38,66 @@ class Counterparty(SQLModel, table=True):
     name: str = Field(max_length=300, index=True, unique=True)
     short_name: str | None = Field(default=None, max_length=100)
 
-    trades: list["Trade"] = Relationship(back_populates="counterparty")
+    option_trades: list["OptionTrade"] = Relationship(back_populates="counterparty")
     spot_trades: list["SpotTrade"] = Relationship(back_populates="counterparty")
 
 
-class Trade(SQLModel, table=True):
-    """Central trade entity mapping COMSTAR FX Options CSV export (~90 columns)."""
+# ---------------------------------------------------------------------------
+# Child detail tables (defined before OptionTrade to avoid forward-ref issues)
+# ---------------------------------------------------------------------------
 
-    __tablename__ = "trades"
+
+class BarrierOptionDetails(SQLModel, table=True):
+    """Barrier-specific fields — one-to-one with OptionTrade."""
+
+    __tablename__ = "barrier_option_details"
+
+    id: int | None = Field(default=None, foreign_key="option_trades.id", primary_key=True)
+
+    barrier_type: str | None = Field(default=None, max_length=50)
+    barrier_direction: str | None = Field(default=None, max_length=20)
+    barrier_level: float | None = Field(default=None)
+
+    option_trade: "OptionTrade" = Relationship(back_populates="barrier_details")
+
+
+class AsianOptionDetails(SQLModel, table=True):
+    """Asian/averaging-specific fields — one-to-one with OptionTrade."""
+
+    __tablename__ = "asian_option_details"
+
+    id: int | None = Field(default=None, foreign_key="option_trades.id", primary_key=True)
+
+    asian_sub_type: str | None = Field(default=None, max_length=50)
+    averaging_method: str | None = Field(default=None, max_length=50)
+    averaging_frequency: str | None = Field(default=None, max_length=50)
+    averaging_rounding_method: str | None = Field(default=None, max_length=50)
+    averaging_decimal_places: int | None = Field(default=None)
+    reference_holiday: str | None = Field(default=None, max_length=100)
+    observation_start_date: date | None = Field(default=None)
+    observation_end_date: date | None = Field(default=None)
+    averaging_start_date: date | None = Field(default=None)
+    averaging_end_date: date | None = Field(default=None)
+
+    option_trade: "OptionTrade" = Relationship(back_populates="asian_details")
+
+
+# ---------------------------------------------------------------------------
+# Base table
+# ---------------------------------------------------------------------------
+
+
+class OptionTrade(SQLModel, table=True):
+    """Option trade entity mapping COMSTAR FX Options CSV export (~65 columns).
+
+    FX vanilla options use this table directly (option_category="fx_vanilla").
+    Barrier and Asian options add child detail tables via one-to-one FK.
+    """
+
+    __tablename__ = "option_trades"
+
+    # === Option category discriminator ===
+    option_category: str = Field(default="fx_vanilla", max_length=50)
 
     # === Primary Key & Core Identifiers ===
     id: int | None = Field(default=None, primary_key=True)
@@ -51,9 +111,11 @@ class Trade(SQLModel, table=True):
     counterparty_id: int | None = Field(default=None, foreign_key="counterparties.id", index=True)
 
     # === Relationships ===
-    portfolio: Portfolio | None = Relationship(back_populates="trades")
-    counterparty: Counterparty | None = Relationship(back_populates="trades")
-    calculation_results: list["CalculationResult"] = Relationship(back_populates="trade")
+    portfolio: Portfolio | None = Relationship(back_populates="option_trades")
+    counterparty: Counterparty | None = Relationship(back_populates="option_trades")
+    calculation_results: list["CalculationResult"] = Relationship(back_populates="option_trade")
+    barrier_details: BarrierOptionDetails | None = Relationship(back_populates="option_trade")
+    asian_details: AsianOptionDetails | None = Relationship(back_populates="option_trade")
 
     # === Portfolio & Strategy ===
     portfolio_name: str | None = Field(default=None, max_length=200)
@@ -83,10 +145,6 @@ class Trade(SQLModel, table=True):
     expiry_date: date | None = Field(default=None, index=True)
     delivery_date: date | None = Field(default=None)
     premium_payment_date: date | None = Field(default=None)
-    observation_start_date: date | None = Field(default=None)
-    observation_end_date: date | None = Field(default=None)
-    averaging_start_date: date | None = Field(default=None)
-    averaging_end_date: date | None = Field(default=None)
 
     # === Premium ===
     premium_type: str | None = Field(default=None, max_length=50)
@@ -105,19 +163,6 @@ class Trade(SQLModel, table=True):
     tenor: str | None = Field(default=None, max_length=50)
     timezone: str | None = Field(default=None, max_length=50)
     expiry_cutoff_time: str | None = Field(default=None, max_length=20)
-
-    # === Barrier Option Fields ===
-    barrier_type: str | None = Field(default=None, max_length=50)
-    barrier_direction: str | None = Field(default=None, max_length=20)
-    barrier_level: float | None = Field(default=None)
-
-    # === Asian Option Fields ===
-    asian_sub_type: str | None = Field(default=None, max_length=50)
-    averaging_method: str | None = Field(default=None, max_length=50)
-    averaging_frequency: str | None = Field(default=None, max_length=50)
-    averaging_rounding_method: str | None = Field(default=None, max_length=50)
-    averaging_decimal_places: int | None = Field(default=None)
-    reference_holiday: str | None = Field(default=None, max_length=100)
 
     # === Return / Payoff ===
     return_amount: float | None = Field(default=None)
@@ -249,7 +294,7 @@ class CalculationResult(SQLModel, table=True):
     __tablename__ = "calculation_results"
 
     id: int | None = Field(default=None, primary_key=True)
-    trade_id: int = Field(foreign_key="trades.id", index=True)
+    trade_id: int = Field(foreign_key="option_trades.id", index=True)
 
     calculation_date: date = Field(default_factory=date.today)
     spot: float | None = Field(default=None)
@@ -268,4 +313,4 @@ class CalculationResult(SQLModel, table=True):
     scenario_label: str | None = Field(default=None, max_length=100, index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    trade: Trade = Relationship(back_populates="calculation_results")
+    option_trade: OptionTrade = Relationship(back_populates="calculation_results")

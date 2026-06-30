@@ -172,11 +172,11 @@ def confirm_import(
 @router.get("/columns")
 def get_column_mapping() -> dict:
     """Get the expected column mapping reference for COMSTAR exports."""
-    from app.utils.column_mapping import CSV_TO_TRADE_FIELD
+    from app.utils.column_mapping import CSV_TO_OPTION_TRADE_FIELD
 
     return {
-        "mapping": CSV_TO_TRADE_FIELD,
-        "total_columns": len(CSV_TO_TRADE_FIELD),
+        "mapping": CSV_TO_OPTION_TRADE_FIELD,
+        "total_columns": len(CSV_TO_OPTION_TRADE_FIELD),
     }
 
 

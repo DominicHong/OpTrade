@@ -42,14 +42,14 @@ class PortfolioGreeksSummary(BaseModel):
 
 
 class PortfolioResolveRequest(BaseModel):
-    """Request to resolve curve parameters for all trades in a portfolio."""
+    """Request to resolve curve parameters for all option trades in a portfolio."""
 
     valuation_date: date
     curve_type: str = "fx_implied_rate"
 
 
-class TradeParamsResolved(BaseModel):
-    """Per-trade resolved parameters from curve data."""
+class OptionTradeParamsResolved(BaseModel):
+    """Per-option-trade resolved parameters from curve data."""
 
     trade_id: int
     trade_id_str: str | None = None
@@ -69,11 +69,11 @@ class TradeParamsResolved(BaseModel):
 
 
 class PortfolioResolveResponse(BaseModel):
-    """Response with per-trade resolved curve parameters."""
+    """Response with per-option-trade resolved curve parameters."""
 
     valuation_date: date
     curve_type: str
-    trades: list[TradeParamsResolved]
+    trades: list[OptionTradeParamsResolved]
 
 
 # ---------------------------------------------------------------------------
@@ -81,8 +81,8 @@ class PortfolioResolveResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TradeParamsOverride(BaseModel):
-    """User-supplied overrides for a single trade's valuation parameters.
+class OptionTradeParamsOverride(BaseModel):
+    """User-supplied overrides for a single option trade's valuation parameters.
 
     ``None`` means "resolve from curve (if available) or use trade default".
     """
@@ -104,11 +104,11 @@ class PortfolioGreeksRequest(BaseModel):
 
     valuation_date: date | None = None
     curve_type: str | None = None
-    trade_params: list[TradeParamsOverride] = []
+    trade_params: list[OptionTradeParamsOverride] = []
 
 
-class TradeGreeksDetail(BaseModel):
-    """Greeks result for a single trade within a portfolio."""
+class OptionTradeGreeksDetail(BaseModel):
+    """Greeks result for a single option trade within a portfolio."""
 
     trade_id: int
     trade_id_str: str | None = None
@@ -121,7 +121,7 @@ class TradeGreeksDetail(BaseModel):
     gamma: float | None = None
     npv: float | None = None
     premium: float | None = None  # option premium, converted to ccy2
-    profit: float | None = None  # Buy: npv*notional - premium; Sell: premium + npv*notional (QuantLib's option NPV is Negative for short)
+    profit: float | None = None  # Buy: npv*notional - premium; Sell: premium + npv*notional
     error: str | None = None
 
 
@@ -141,4 +141,4 @@ class PortfolioGreeksResponse(BaseModel):
     spot_used: float | None = None
     curve_type: str | None = None
     curve_valuation_date: date | None = None
-    trades: list[TradeGreeksDetail] = []
+    trades: list[OptionTradeGreeksDetail] = []

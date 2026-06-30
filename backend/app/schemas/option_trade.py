@@ -4,8 +4,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class TradeBase(BaseModel):
-    """Common fields shared across trade schemas."""
+class OptionTradeBase(BaseModel):
+    """Common fields shared across option trade schemas."""
+
+    # Polymorphic discriminator
+    option_category: str = "fx_vanilla"
 
     # Core identifiers
     source_trade_id: str | None = None
@@ -44,15 +47,6 @@ class TradeBase(BaseModel):
     spot_rate: float | None = None
     volatility: float | None = None
 
-    # Barrier
-    barrier_type: str | None = None
-    barrier_direction: str | None = None
-    barrier_level: float | None = None
-
-    # Asian
-    asian_sub_type: str | None = None
-    averaging_method: str | None = None
-
     # Status
     exercise_status: str | None = None
     delivery_status: str | None = None
@@ -84,8 +78,8 @@ class TradeBase(BaseModel):
         return v
 
 
-class TradeRead(TradeBase):
-    """Schema for reading a Trade (API response)."""
+class OptionTradeRead(OptionTradeBase):
+    """Schema for reading an OptionTrade (API response)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,29 +89,29 @@ class TradeRead(TradeBase):
     updated_at: datetime | None = None
 
 
-class TradeCreate(TradeBase):
-    """Schema for creating a new trade manually."""
+class OptionTradeCreate(OptionTradeBase):
+    """Schema for creating a new option trade manually."""
 
     trade_id: str
 
 
-class TradeUpdate(TradeBase):
-    """Fields that can be updated on a trade."""
+class OptionTradeUpdate(OptionTradeBase):
+    """Fields that can be updated on an option trade."""
 
     trade_id: str | None = None
 
 
-class TradeListResponse(BaseModel):
-    """Paginated list response for trades."""
+class OptionTradeListResponse(BaseModel):
+    """Paginated list response for option trades."""
 
-    data: list[TradeRead]
+    data: list[OptionTradeRead]
     total: int
     page: int
     page_size: int
 
 
-class TradeFilterParams(BaseModel):
-    """Query parameters for filtering trades list."""
+class OptionTradeFilterParams(BaseModel):
+    """Query parameters for filtering option trades list."""
 
     page: int = 1
     page_size: int = 50
@@ -135,3 +129,4 @@ class TradeFilterParams(BaseModel):
     trade_date_to: date | None = None
     search: str | None = None
     exercise_status: str | None = None
+    option_category: str | None = None

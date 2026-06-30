@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { fetchDashboardSummary } from '@/api/dashboard'
-import { useTradeStore } from '@/stores/tradeStore'
+import { useOptionTradeStore } from '@/stores/optionTradeStore'
 import { toWan } from '@/utils/format'
 import type { DashboardSummary } from '@/types/api'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
@@ -9,7 +9,7 @@ import NumberDisplay from '@/components/shared/NumberDisplay.vue'
 
 const summary = ref<DashboardSummary | null>(null)
 const loading = ref(true)
-const tradeStore = useTradeStore()
+const tradeStore = useOptionTradeStore()
 
 onMounted(async () => {
   try {

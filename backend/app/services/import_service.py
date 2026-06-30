@@ -4,7 +4,7 @@ Import service — full pipeline from Excel file to database records.
 Stages:
   1. Parse: Read CSV/Excel, map Chinese headers to model fields
   2. Validate: Check required fields, types, business rules, duplicates
-  3. Execute: Find-or-create Portfolio/Counterparty, bulk insert Trades
+  3. Execute: Find-or-create Portfolio/Counterparty, bulk insert OptionTrades
 """
 
 from pathlib import Path
@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from app.models import ImportLog
 from app.utils.column_mapping import (
     BOOL_FIELDS,
-    CSV_TO_TRADE_FIELD,
+    CSV_TO_OPTION_TRADE_FIELD,
     DATE_FIELDS,
     DATETIME_FIELDS,
     FLOAT_FIELDS,
@@ -54,7 +54,7 @@ class ImportService:
         # Determine effective column mapping (only headers present in the file)
         available_headers = set(rows[0].keys()) if rows else set()
         effective_mapping: dict[str, str] = {}
-        for csv_header, field_name in CSV_TO_TRADE_FIELD.items():
+        for csv_header, field_name in CSV_TO_OPTION_TRADE_FIELD.items():
             if csv_header in available_headers:
                 effective_mapping[csv_header] = field_name
 
@@ -120,6 +120,30 @@ class ImportService:
 
         return result
 
+    def _determine_option_category(self, row_data: dict) -> str:
+        """Determine option_category from row data based on populated fields.
+
+        Barrier fields populated → "barrier"
+        Asian/Averaging fields populated → "asian"
+        Otherwise → "fx_vanilla" (default)
+        """
+        barrier_fields = {"barrier_type", "barrier_direction", "barrier_level"}
+        asian_fields = {
+            "asian_sub_type", "averaging_method", "averaging_frequency",
+            "averaging_rounding_method", "averaging_decimal_places",
+            "reference_holiday", "observation_start_date", "observation_end_date",
+            "averaging_start_date", "averaging_end_date",
+        }
+
+        has_barrier = any(row_data.get(f) is not None for f in barrier_fields)
+        has_asian = any(row_data.get(f) is not None for f in asian_fields)
+
+        if has_barrier:
+            return "barrier"
+        elif has_asian:
+            return "asian"
+        return "fx_vanilla"
+
     def execute_import(
         self,
         parsed: ParsedImportData,
@@ -131,7 +155,7 @@ class ImportService:
         Persist validated rows to the database.
         Creates Portfolio and Counterparty records as needed.
         """
-        from app.models import Counterparty, Portfolio, Trade
+        from app.models import AsianOptionDetails, BarrierOptionDetails, Counterparty, OptionTrade, Portfolio
 
         imported = 0
         skipped = 0
@@ -168,19 +192,39 @@ class ImportService:
                 trade_id_val = row_data.get("trade_id")
                 if trade_id_val:
                     existing = session.exec(
-                        select(Trade).where(Trade.trade_id == trade_id_val)
+                        select(OptionTrade).where(OptionTrade.trade_id == trade_id_val)
                     ).first()
                     if existing:
                         skipped += 1
                         continue
 
-                # Create trade
-                trade = Trade()
-                for field_name, value in row_data.items():
-                    if hasattr(Trade, field_name):
-                        setattr(trade, field_name, value)
+                # Determine option category
+                option_category = self._determine_option_category(row_data)
+                row_data["option_category"] = option_category
 
-                session.add(trade)
+                # Create the base option trade first (all categories share the base table)
+                option_trade = OptionTrade()
+                for field_name, value in row_data.items():
+                    if hasattr(OptionTrade, field_name):
+                        setattr(option_trade, field_name, value)
+
+                session.add(option_trade)
+                session.flush()  # ensure PK is generated for child tables
+
+                # Create child detail records for exotic types
+                if option_category == "barrier":
+                    barrier_detail = BarrierOptionDetails(id=option_trade.id)
+                    for field_name, value in row_data.items():
+                        if hasattr(BarrierOptionDetails, field_name):
+                            setattr(barrier_detail, field_name, value)
+                    session.add(barrier_detail)
+                elif option_category == "asian":
+                    asian_detail = AsianOptionDetails(id=option_trade.id)
+                    for field_name, value in row_data.items():
+                        if hasattr(AsianOptionDetails, field_name):
+                            setattr(asian_detail, field_name, value)
+                    session.add(asian_detail)
+
                 imported += 1
 
             except Exception:

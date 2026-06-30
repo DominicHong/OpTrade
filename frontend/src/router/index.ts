@@ -9,14 +9,14 @@ const router = createRouter({
       component: () => import('@/pages/DashboardPage.vue'),
     },
     {
-      path: '/trades',
-      name: 'trades',
-      component: () => import('@/pages/TradeListPage.vue'),
+      path: '/option-trades',
+      name: 'option-trades',
+      component: () => import('@/pages/OptionTradeListPage.vue'),
     },
     {
-      path: '/trades/:id',
-      name: 'trade-detail',
-      component: () => import('@/pages/TradeDetailPage.vue'),
+      path: '/option-trades/:id',
+      name: 'option-trade-detail',
+      component: () => import('@/pages/OptionTradeDetailPage.vue'),
       props: true,
     },
     {

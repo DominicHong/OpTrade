@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Counterparty, Portfolio, Trade
+from app.models import Counterparty, Portfolio, OptionTrade
 from app.schemas.dashboard import DashboardSummary
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -14,15 +14,15 @@ def get_dashboard_summary(
 ) -> DashboardSummary:
     """Get aggregate summary for the dashboard."""
 
-    total_trades = session.exec(select(func.count(Trade.id))).one()
+    total_trades = session.exec(select(func.count(OptionTrade.id))).one()
     total_portfolios = session.exec(select(func.count(Portfolio.id))).one()
     total_counterparties = session.exec(select(func.count(Counterparty.id))).one()
 
     # Notional by ccy_pair
     trades = session.exec(
-        select(Trade.ccy_pair, func.sum(Trade.notional1).label("total_notional"))
-        .where(Trade.notional1.isnot(None))
-        .group_by(Trade.ccy_pair)
+        select(OptionTrade.ccy_pair, func.sum(OptionTrade.notional1).label("total_notional"))
+        .where(OptionTrade.notional1.isnot(None))
+        .group_by(OptionTrade.ccy_pair)
     ).all()
 
     notional_by_ccy: dict[str, float] = {}
@@ -35,9 +35,9 @@ def get_dashboard_summary(
 
     # Trades by type
     type_counts = session.exec(
-        select(Trade.trade_type, func.count(Trade.id))
-        .where(Trade.trade_type.isnot(None))
-        .group_by(Trade.trade_type)
+        select(OptionTrade.trade_type, func.count(OptionTrade.id))
+        .where(OptionTrade.trade_type.isnot(None))
+        .group_by(OptionTrade.trade_type)
     ).all()
     trades_by_type = {row[0]: row[1] for row in type_counts if row[0]}
 

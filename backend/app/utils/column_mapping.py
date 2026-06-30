@@ -6,7 +6,7 @@ This module provides the canonical mapping for the import pipeline.
 """
 
 # Mapping from Chinese CSV header to Trade model attribute name
-CSV_TO_TRADE_FIELD: dict[str, str] = {
+CSV_TO_OPTION_TRADE_FIELD: dict[str, str] = {
     # Identifiers
     "成交编号": "trade_id",
     "原始交易系统编号": "source_trade_id",

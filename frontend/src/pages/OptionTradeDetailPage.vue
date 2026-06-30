@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTradeStore } from '@/stores/tradeStore'
+import { useOptionTradeStore } from '@/stores/optionTradeStore'
 import { formatDate, formatNumber } from '@/utils/format'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
 
 const route = useRoute()
 const router = useRouter()
-const store = useTradeStore()
+const store = useOptionTradeStore()
 
 onMounted(async () => {
   const id = Number(route.params.id)
   if (id) await store.loadTrade(id)
 })
 
-function goBack() { router.push('/trades') }
+function goBack() { router.push('/option-trades') }
 </script>
 
 <template>

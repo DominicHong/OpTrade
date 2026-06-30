@@ -3,12 +3,12 @@ import { fetchPortfolioGreeks, resolvePortfolioParams } from '@/api/portfolios'
 import type {
   PortfolioGreeksRequest,
   PortfolioGreeksResponse,
-  TradeParamsResolved,
-  TradeParamsOverride,
+  OptionTradeParamsResolved,
+  OptionTradeParamsOverride,
 } from '@/types/portfolio'
 
-/** Editable per-trade params (in display units: % for rates/vol, raw for spot). */
-export interface EditableTradeParams {
+/** Editable per-option-trade params (in display units: % for rates/vol, raw for spot). */
+export interface EditableOptionTradeParams {
   tradeId: number
   tradeIdStr: string | null
   ccyPair: string | null
@@ -35,8 +35,8 @@ export function useGreeksCalculation() {
   const valuationDate = ref<string>(new Date().toISOString().slice(0, 10))
   const curveType = ref<string | null>(null)
 
-  // Per-trade params (populated by resolve-params)
-  const tradeParams = ref<EditableTradeParams[]>([])
+  // Per-option-trade params (populated by resolve-params)
+  const tradeParams = ref<EditableOptionTradeParams[]>([])
 
   // Results
   const result = ref<PortfolioGreeksResponse | null>(null)
@@ -64,7 +64,7 @@ export function useGreeksCalculation() {
       })
 
       tradeParams.value = response.trades.map(
-        (t: TradeParamsResolved): EditableTradeParams => ({
+        (t: OptionTradeParamsResolved): EditableOptionTradeParams => ({
           tradeId: t.trade_id,
           tradeIdStr: t.trade_id_str,
           ccyPair: t.ccy_pair,
@@ -91,7 +91,7 @@ export function useGreeksCalculation() {
     }
   }
 
-  /** Update a single field for a trade (user edit). */
+  /** Update a single field for an option trade (user edit). */
   function updateTradeParam(
     tradeId: number,
     field: 'rfRateBase' | 'rfRateQuote' | 'spot' | 'volatility',
@@ -107,7 +107,7 @@ export function useGreeksCalculation() {
     loading.value = true
     error.value = null
     try {
-      const overrides: TradeParamsOverride[] = tradeParams.value
+      const overrides: OptionTradeParamsOverride[] = tradeParams.value
         .filter((tp) => {
           // Only include trades where the user has provided at least one explicit value
           return (

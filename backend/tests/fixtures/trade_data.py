@@ -1,12 +1,12 @@
-"""Factory functions for creating test Trade records."""
+"""Factory functions for creating test OptionTrade records."""
 
 from datetime import date
 
-from app.models import Trade
+from app.models import OptionTrade
 
 
-def create_sample_trade(**overrides) -> Trade:
-    """Create a Trade instance with sensible defaults for testing."""
+def create_sample_option_trade(**overrides) -> OptionTrade:
+    """Create an OptionTrade instance with sensible defaults for testing."""
     defaults = {
         "trade_id": "TEST-001",
         "source_trade_id": "SRC-001",
@@ -28,6 +28,7 @@ def create_sample_trade(**overrides) -> Trade:
         "venue": "CFETS",
         "exercise_status": "未行权",
         "delivery_status": "未交割",
+        "option_category": "fx_vanilla",
     }
     defaults.update(overrides)
-    return Trade(**defaults)
+    return OptionTrade(**defaults)

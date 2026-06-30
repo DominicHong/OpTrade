@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 
 class GreeksResult(BaseModel):
-    """Greeks calculation result for a single trade."""
+    """Greeks calculation result for a single option trade."""
 
     trade_id: int
     calculation_date: date
@@ -26,7 +26,7 @@ class GreeksResult(BaseModel):
 
 
 class GreeksRequest(BaseModel):
-    """Request to calculate Greeks for one or more trades."""
+    """Request to calculate Greeks for one or more option trades."""
 
     trade_ids: list[int]
     spot: float | None = None

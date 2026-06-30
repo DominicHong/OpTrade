@@ -8,6 +8,7 @@ class ImportParsedRow(BaseModel):
 
     row_number: int
     trade_id: str | None = None
+    option_category: str = "fx_vanilla"
     data: dict[str, str]  # column_name -> raw value
     errors: list[str] = []
 

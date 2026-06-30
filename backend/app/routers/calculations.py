@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from app.database import get_session
-from app.models import CalculationResult, Trade
+from app.models import CalculationResult, OptionTrade
 from app.schemas.calculation import GreeksRequest, GreeksResult, PricingRequest, PricingResult
 from app.services.greeks_service import greeks_service
 from app.services.pricing_service import pricing_service
@@ -17,16 +17,16 @@ def calculate_greeks(
     request: GreeksRequest,
     session: Session = Depends(get_session),
 ) -> list[GreeksResult]:
-    """Calculate Greeks for the given trade IDs using QuantLib."""
+    """Calculate Greeks for the given option trade IDs using QuantLib."""
     results: list[GreeksResult] = []
 
     for trade_id in request.trade_ids:
-        trade = session.get(Trade, trade_id)
+        trade = session.get(OptionTrade, trade_id)
         if not trade:
             results.append(GreeksResult(
                 trade_id=trade_id,
                 calculation_date=date.today(),
-                error=f"Trade {trade_id} not found",
+                error=f"OptionTrade {trade_id} not found",
                 scenario_label=request.scenario_label,
             ))
             continue
@@ -35,7 +35,7 @@ def calculate_greeks(
             results.append(GreeksResult(
                 trade_id=trade_id,
                 calculation_date=date.today(),
-                error="Trade missing required fields (strike, expiry_date, trade_type, direction)",
+                error="Option trade missing required fields (strike, expiry_date, trade_type, direction)",
                 scenario_label=request.scenario_label,
             ))
             continue

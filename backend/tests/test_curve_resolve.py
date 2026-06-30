@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.models import Portfolio, Trade
+from app.models import Portfolio, OptionTrade
 from app.models.curve import FxImpliedRate
 
 
@@ -32,12 +32,12 @@ def _future_date(days_ahead: int) -> date:
 
 @pytest.fixture
 def portfolio_with_trades(session: Session) -> Portfolio:
-    """Create a portfolio with two USD/CNY trades (different expiries)."""
+    """Create a portfolio with two USD/CNY option trades (different expiries)."""
     portfolio = Portfolio(name="Test Portfolio", description="Curve test")
     session.add(portfolio)
     session.flush()
 
-    t1 = Trade(
+    t1 = OptionTrade(
         trade_id="CURVE-001",
         portfolio_id=portfolio.id,
         ccy_pair="USD/CNY",
@@ -49,7 +49,7 @@ def portfolio_with_trades(session: Session) -> Portfolio:
         spot_rate=7.1150,
         volatility=0.0125,
     )
-    t2 = Trade(
+    t2 = OptionTrade(
         trade_id="CURVE-002",
         portfolio_id=portfolio.id,
         ccy_pair="USD/CNY",
@@ -61,7 +61,7 @@ def portfolio_with_trades(session: Session) -> Portfolio:
         spot_rate=7.1150,
         volatility=0.0125,
     )
-    t3 = Trade(
+    t3 = OptionTrade(
         trade_id="CURVE-003",
         portfolio_id=portfolio.id,
         ccy_pair="EUR/USD",  # non-CNY quote → should not resolve from curve
@@ -142,7 +142,7 @@ class TestResolveParamsEndpoint:
         self, client: TestClient, portfolio_with_trades: Portfolio,
         fx_implied_rate_data: list[FxImpliedRate],
     ):
-        """Resolve endpoint should return params for each trade."""
+        """Resolve endpoint should return params for each option trade."""
         pid = portfolio_with_trades.id
         resp = client.post(
             f"/api/v1/portfolios/{pid}/resolve-params",
@@ -181,7 +181,7 @@ class TestResolveParamsEndpoint:
         self, client: TestClient, portfolio_with_trades: Portfolio,
         fx_implied_rate_data: list[FxImpliedRate],
     ):
-        """Trades with different expiries should get different interpolated rates."""
+        """Option trades with different expiries should get different interpolated rates."""
         pid = portfolio_with_trades.id
         resp = client.post(
             f"/api/v1/portfolios/{pid}/resolve-params",
@@ -301,7 +301,7 @@ class TestGreeksWithCurve:
                 "curve_type": "fx_implied_rate",
                 "trade_params": [
                     {
-                        "trade_id": portfolio_with_trades.trades[0].id,
+                        "trade_id": portfolio_with_trades.option_trades[0].id,
                         "rf_rate_base": 0.055,   # explicit override
                         "rf_rate_quote": None,
                         "spot": 7.5000,
@@ -323,7 +323,7 @@ class TestGreeksWithCurve:
     ):
         """All-null overrides → curve resolution is used for CNY pairs."""
         pid = portfolio_with_trades.id
-        trade_id_cny = portfolio_with_trades.trades[0].id  # USD/CNY
+        trade_id_cny = portfolio_with_trades.option_trades[0].id  # USD/CNY
         resp = client.post(
             f"/api/v1/portfolios/{pid}/greeks",
             json={
@@ -357,7 +357,7 @@ class TestGreeksWithCurve:
         assert resp.status_code == 404
 
     def test_empty_portfolio(self, client: TestClient, session: Session):
-        """Portfolio with no trades returns empty result."""
+        """Portfolio with no option trades returns empty result."""
         portfolio = Portfolio(name="Empty Portfolio")
         session.add(portfolio)
         session.commit()
