@@ -48,6 +48,15 @@ SPOT_REQUIRED_FIELDS: list[str] = [
     "ccy_pair",
 ]
 
+# Chinese headers that strongly identify a spot trade file.
+# Used to detect when a user accidentally uploads an options file as spot.
+SPOT_SIGNATURE_HEADERS: list[str] = [
+    "成交价",
+    "客户价",
+    "成交价/客户价",
+    "起息日",
+]
+
 # Fields that require date parsing (Chinese date formats → date)
 SPOT_DATE_FIELDS: set[str] = {
     "trade_date",

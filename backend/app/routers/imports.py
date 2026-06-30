@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import ImportErrorRecord, ImportLog
+from app.models import ImportLog
 from app.schemas.import_ import (
     ImportConfirmResponse,
     ImportHistoryItem,
@@ -64,17 +64,7 @@ async def upload_excel(
         session.commit()
         session.refresh(import_log)
 
-        # Record validation errors
-        for err in validated.errors:
-            session.add(
-                ImportErrorRecord(
-                    import_log_id=import_log.id,
-                    row_number=err.row_number,
-                    error_type="validation",
-                    error_message=err.message,
-                )
-            )
-        session.commit()
+        # Note: validation errors are returned inline in the response `errors` field
 
         # Phase 3: Execute import — persist validated rows to database
         import_log = import_service.execute_import(
@@ -110,6 +100,8 @@ async def upload_excel(
             errors=[e.to_dict() for e in validated.errors[:50]],
         )
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 

@@ -112,6 +112,19 @@ CSV_TO_OPTION_TRADE_FIELD: dict[str, str] = {
     "创建时间": "created_timestamp",
 }
 
+# Chinese headers that strongly identify an options trade file.
+# Used to detect when a user accidentally uploads a spot file as options.
+OPTIONS_SIGNATURE_HEADERS: list[str] = [
+    "执行价",
+    "期权类型",
+    "行权日",
+    "期权费率",
+    "期权费金额",
+    "期权费类型",
+    "期权费支付日",
+    "交割日",
+]
+
 # Fields that are required (must have a value or the row is flagged as error)
 REQUIRED_FIELDS: list[str] = [
     "trade_id",

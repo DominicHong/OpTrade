@@ -1,5 +1,5 @@
 """
-Core SQLModel entities: OptionTrade, Portfolio, Counterparty, CalculationResult.
+Core SQLModel entities: OptionTrade, Portfolio, Counterparty.
 
 Consolidated into one file to avoid circular imports, since these models
 cross-reference each other via SQLAlchemy relationships.
@@ -113,7 +113,6 @@ class OptionTrade(SQLModel, table=True):
     # === Relationships ===
     portfolio: Portfolio | None = Relationship(back_populates="option_trades")
     counterparty: Counterparty | None = Relationship(back_populates="option_trades")
-    calculation_results: list["CalculationResult"] = Relationship(back_populates="option_trade")
     barrier_details: BarrierOptionDetails | None = Relationship(back_populates="option_trade")
     asian_details: AsianOptionDetails | None = Relationship(back_populates="option_trade")
 
@@ -286,29 +285,3 @@ class SpotTrade(SQLModel, table=True):
     # Relationships
     portfolio: Portfolio = Relationship(back_populates="spot_trades")
     counterparty: Counterparty = Relationship(back_populates="spot_trades")
-
-
-class CalculationResult(SQLModel, table=True):
-    __tablename__ = "calculation_results"
-
-    id: int | None = Field(default=None, primary_key=True)
-    trade_id: int = Field(foreign_key="option_trades.id", index=True)
-
-    calculation_date: date = Field(default_factory=date.today)
-    spot: float | None = Field(default=None)
-    volatility: float | None = Field(default=None)
-    rf_rate_base: float | None = Field(default=None)
-    rf_rate_quote: float | None = Field(default=None)
-    time_to_expiry_years: float | None = Field(default=None)
-
-    npv: float | None = Field(default=None)
-    delta: float | None = Field(default=None)
-    gamma: float | None = Field(default=None)
-    vega: float | None = Field(default=None)
-    theta: float | None = Field(default=None)
-    rho: float | None = Field(default=None)
-
-    scenario_label: str | None = Field(default=None, max_length=100, index=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    option_trade: OptionTrade = Relationship(back_populates="calculation_results")

@@ -21,16 +21,3 @@ class ImportLog(SQLModel, table=True):
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class ImportErrorRecord(SQLModel, table=True):
-    __tablename__ = "import_error_records"
-
-    id: int | None = Field(default=None, primary_key=True)
-    import_log_id: int = Field(foreign_key="import_logs.id", index=True)
-    row_number: int = 0
-    trade_id_value: str | None = Field(default=None, max_length=200)
-    error_type: str = Field(max_length=50)  # validation/duplicate/parse/missing_field
-    error_message: str = Field()
-    raw_data: str | None = Field(default=None)  # JSON string of the row
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

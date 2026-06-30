@@ -32,6 +32,7 @@ from app.utils.spot_column_mapping import (
     SPOT_DATETIME_FIELDS,
     SPOT_FLOAT_FIELDS,
     SPOT_REQUIRED_FIELDS,
+    SPOT_SIGNATURE_HEADERS,
 )
 
 
@@ -56,6 +57,17 @@ class SpotImportService:
         for csv_header, field_name in CSV_TO_SPOT_FIELD.items():
             if csv_header in available_headers:
                 effective_mapping[csv_header] = field_name
+
+        # File type detection: reject non-spot files (e.g., option trade files)
+        if available_headers:
+            matched_signatures = [
+                h for h in SPOT_SIGNATURE_HEADERS if h in available_headers
+            ]
+            if len(matched_signatures) == 0:
+                raise ValueError(
+                    "文件不含即期交易特征字段（如成交价、起息日等），"
+                    "可能上传了期权流水文件。请选择「期权 from ComStar」导入类型。"
+                )
 
         return ParsedImportData(
             filename=filename,

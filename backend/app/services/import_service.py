@@ -18,6 +18,7 @@ from app.utils.column_mapping import (
     DATE_FIELDS,
     DATETIME_FIELDS,
     FLOAT_FIELDS,
+    OPTIONS_SIGNATURE_HEADERS,
     REQUIRED_FIELDS,
 )
 from app.utils.date_utils import (
@@ -57,6 +58,17 @@ class ImportService:
         for csv_header, field_name in CSV_TO_OPTION_TRADE_FIELD.items():
             if csv_header in available_headers:
                 effective_mapping[csv_header] = field_name
+
+        # File type detection: reject non-option files (e.g., spot trade files)
+        if available_headers:
+            matched_signatures = [
+                h for h in OPTIONS_SIGNATURE_HEADERS if h in available_headers
+            ]
+            if len(matched_signatures) < 2:
+                raise ValueError(
+                    "文件不含期权交易特征字段（如执行价、期权类型、行权日、期权费率等），"
+                    "可能上传了即期流水文件。请选择「即期 from ComStar」导入类型。"
+                )
 
         return ParsedImportData(
             filename=filename,

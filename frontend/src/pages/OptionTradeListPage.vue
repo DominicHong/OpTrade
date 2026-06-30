@@ -198,6 +198,15 @@ async function doBatchDelete() {
   }
 }
 
+async function deleteOptionTrade(trade: OptionTrade) {
+  try {
+    await store.removeTrade(trade.id)
+    ui.addNotification('success', '期权交易已删除')
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+  }
+}
+
 function cancelBatchDelete() {
   showBatchDeleteConfirm.value = false
 }
@@ -214,7 +223,7 @@ function confirmSpotBatchDelete() {
 async function doSpotBatchDelete() {
   try {
     const count = await spotStore.batchDelete(spotSelectedIds.value)
-    ui.addNotification('success', `已删除 ${count} 条即期流水`)
+    ui.addNotification('success', `已删除 ${count} 条即期交易`)
     spotSelectedIds.value = []
   } catch (e: unknown) {
     ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
@@ -235,7 +244,7 @@ const columns = computed<TableColumn[]>(() => {
     : '期权费率'
 
   return [
-    { key: 'actions', label: '编辑', width: '100px' },
+    { key: 'actions', label: '操作', width: '100px' },
     { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
     { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
     { key: 'trade_type', label: '类型', sortable: true, width: '60px' },
@@ -444,10 +453,10 @@ async function submitSpotForm() {
   try {
     if (spotModalMode.value === 'create') {
       await spotStore.addTrade(payload as SpotTradeCreate)
-      ui.addNotification('success', '即期流水创建成功')
+      ui.addNotification('success', '即期交易创建成功')
     } else if (spotEditingId.value) {
       await spotStore.saveTrade(spotEditingId.value, payload as SpotTradeUpdate)
-      ui.addNotification('success', '即期流水更新成功')
+      ui.addNotification('success', '即期交易更新成功')
     }
     showSpotModal.value = false
     spotStore.loadTrades()
@@ -461,7 +470,7 @@ async function submitSpotForm() {
 async function deleteSpotTrade(trade: SpotTrade) {
   try {
     await spotStore.removeTrade(trade.id)
-    ui.addNotification('success', '即期流水已删除')
+    ui.addNotification('success', '即期交易已删除')
   } catch (e: unknown) {
     ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
   }
@@ -515,6 +524,10 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         </button>
       </div>
 
+      <div class="section-divider">
+        <h2 class="section-title">期权交易</h2>
+      </div>
+
       <DataTable
         :columns="columns"
         :rows="store.trades as unknown as Record<string, unknown>[]"
@@ -550,6 +563,9 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
             <button class="action-btn action-edit" title="编辑" @click="openEditModal(row as unknown as OptionTrade)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
+            <button class="action-btn action-delete" title="删除" @click="deleteOptionTrade(row as unknown as OptionTrade)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
           </div>
         </template>
       </DataTable>
@@ -569,7 +585,7 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
 
       <!-- Spot trades section -->
       <div class="section-divider">
-        <h2 class="section-title">即期流水</h2>
+        <h2 class="section-title">即期交易</h2>
       </div>
 
       <div class="toolbar">
@@ -869,7 +885,7 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
       <div v-if="showSpotModal" class="modal-overlay" @mousedown="onSpotOverlayMousedown" @click="onSpotOverlayClick">
         <div class="modal">
           <div class="modal-header">
-            <h3>{{ spotModalMode === 'create' ? '新建即期流水' : '编辑即期流水' }}</h3>
+            <h3>{{ spotModalMode === 'create' ? '新建即期交易' : '编辑即期交易' }}</h3>
             <button class="modal-close" @click="showSpotModal = false">&times;</button>
           </div>
           <div class="modal-body">
@@ -984,7 +1000,7 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
             <button class="modal-close" @click="cancelSpotBatchDelete">&times;</button>
           </div>
           <div class="modal-body">
-            <p>确定要删除选中的 <strong>{{ spotSelectedIds.length }}</strong> 条即期流水吗？此操作不可撤销。</p>
+            <p>确定要删除选中的 <strong>{{ spotSelectedIds.length }}</strong> 条即期交易吗？此操作不可撤销。</p>
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" @click="cancelSpotBatchDelete">取消</button>

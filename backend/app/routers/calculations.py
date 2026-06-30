@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from app.database import get_session
-from app.models import CalculationResult, OptionTrade
+from app.models import OptionTrade
 from app.schemas.calculation import GreeksRequest, GreeksResult, PricingRequest, PricingResult
 from app.services.greeks_service import greeks_service
 from app.services.pricing_service import pricing_service
@@ -62,25 +62,6 @@ def calculate_greeks(
             expiry_date=trade.expiry_date,
         )
 
-        # Persist to cache
-        result_record = CalculationResult(
-            trade_id=trade.id,
-            calculation_date=date.today(),
-            spot=spot,
-            volatility=vol,
-            rf_rate_base=rf_rate_base,
-            rf_rate_quote=rf_rate_quote,
-            time_to_expiry_years=tte,
-            npv=greeks.get("npv"),
-            delta=greeks.get("delta"),
-            gamma=greeks.get("gamma"),
-            vega=greeks.get("vega"),
-            theta=greeks.get("theta"),
-            rho=greeks.get("rho"),
-            scenario_label=request.scenario_label,
-        )
-        session.add(result_record)
-
         results.append(GreeksResult(
             trade_id=trade.id,
             calculation_date=date.today(),
@@ -99,7 +80,6 @@ def calculate_greeks(
             error=greeks.get("error"),
         ))
 
-    session.commit()
     return results
 
 

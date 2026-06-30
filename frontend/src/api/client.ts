@@ -14,9 +14,9 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message = error.response?.data?.detail || error.message || 'Unknown error'
-    console.error(`[API Error] ${error.config?.url}:`, message)
-    return Promise.reject(error)
+    const detail = error.response?.data?.detail || error.message || 'Unknown error'
+    console.error(`[API Error] ${error.config?.url}:`, detail)
+    return Promise.reject(new Error(detail))
   },
 )
 
