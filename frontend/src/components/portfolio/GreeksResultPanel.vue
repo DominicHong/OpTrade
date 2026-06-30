@@ -50,7 +50,7 @@ function isCall(optionType: string | null | undefined): boolean {
   </div>
 
   <div v-if="result.trades.length > 0" class="card">
-    <h3>逐笔明细</h3>
+    <h3>期权明细</h3>
     <div class="table-wrap">
       <table class="greeks-table">
         <thead>

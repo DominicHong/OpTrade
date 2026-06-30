@@ -72,7 +72,7 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
     <!-- Common parameters -->
     <div class="common-params">
       <div class="param-field">
-        <label for="valuation-date">估值日期</label>
+        <label for="valuation-date">结束日/估值日</label>
         <input
           id="valuation-date"
           type="date"
@@ -103,7 +103,7 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
           :disabled="!curveType || resolving"
           @click="emit('resolveParams')"
         >
-          {{ resolving ? '解析中...' : '解析参数' }}
+          {{ resolving ? '获取中...' : '获取参数' }}
         </button>
       </div>
     </div>
@@ -199,7 +199,7 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
 
     <!-- Empty state: no params resolved yet -->
     <div v-else-if="curveType" class="empty-hint">
-      选择估值日期和参考曲线后，点击「解析参数」从曲线推导各交易的估值参数。
+      选择估值日期和参考曲线后，点击「获取参数」从曲线推导各交易的估值参数。
     </div>
 
     <button
@@ -207,7 +207,7 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
       :disabled="loading"
       @click="emit('submit')"
     >
-      {{ loading ? '计算中...' : '计算 Greeks' }}
+      {{ loading ? '计算中...' : '计算' }}
     </button>
   </div>
 </template>
