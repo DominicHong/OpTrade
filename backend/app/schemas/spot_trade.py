@@ -25,7 +25,7 @@ class SpotTradeBase(BaseModel):
 
     # Dates
     trade_date: date | None = None
-    value_date: date | None = None
+    settlement_date: date | None = None
 
     # Status and meta
     source: str | None = None
@@ -78,6 +78,6 @@ class SpotTradeFilterParams(BaseModel):
     event_type: str | None = None
     trade_date_from: date | None = None
     trade_date_to: date | None = None
-    value_date_from: date | None = None
-    value_date_to: date | None = None
+    settlement_date_from: date | None = None
+    settlement_date_to: date | None = None
     search: str | None = None

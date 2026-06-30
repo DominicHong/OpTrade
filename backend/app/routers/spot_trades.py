@@ -100,8 +100,8 @@ def list_spot_trades(
     event_type: str | None = Query(default=None),
     trade_date_from: date | None = Query(default=None),
     trade_date_to: date | None = Query(default=None),
-    value_date_from: date | None = Query(default=None),
-    value_date_to: date | None = Query(default=None),
+    settlement_date_from: date | None = Query(default=None),
+    settlement_date_to: date | None = Query(default=None),
     search: str | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> SpotTradeListResponse:
@@ -131,12 +131,12 @@ def list_spot_trades(
     if trade_date_to:
         query = query.where(SpotTrade.trade_date <= trade_date_to)
         count_query = count_query.where(SpotTrade.trade_date <= trade_date_to)
-    if value_date_from:
-        query = query.where(SpotTrade.value_date >= value_date_from)
-        count_query = count_query.where(SpotTrade.value_date >= value_date_from)
-    if value_date_to:
-        query = query.where(SpotTrade.value_date <= value_date_to)
-        count_query = count_query.where(SpotTrade.value_date <= value_date_to)
+    if settlement_date_from:
+        query = query.where(SpotTrade.settlement_date >= settlement_date_from)
+        count_query = count_query.where(SpotTrade.settlement_date >= settlement_date_from)
+    if settlement_date_to:
+        query = query.where(SpotTrade.settlement_date <= settlement_date_to)
+        count_query = count_query.where(SpotTrade.settlement_date <= settlement_date_to)
     if search:
         search_term = f"%{search}%"
         query = query.where(

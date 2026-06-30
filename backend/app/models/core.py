@@ -271,7 +271,7 @@ class SpotTrade(SQLModel, table=True):
 
     # Dates
     trade_date: date | None = Field(default=None)
-    value_date: date | None = Field(default=None)
+    settlement_date: date | None = Field(default=None)
 
     # Status and meta
     source: str | None = Field(default=None, max_length=100)

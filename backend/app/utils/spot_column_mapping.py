@@ -34,7 +34,7 @@ CSV_TO_SPOT_FIELD: dict[str, str] = {
 
     # Dates
     "交易日": "trade_date",
-    "起息日": "value_date",
+    "起息日": "settlement_date",
     "创建时间": "created_timestamp",
 
     # Status & meta
@@ -60,7 +60,7 @@ SPOT_SIGNATURE_HEADERS: list[str] = [
 # Fields that require date parsing (Chinese date formats → date)
 SPOT_DATE_FIELDS: set[str] = {
     "trade_date",
-    "value_date",
+    "settlement_date",
 }
 
 # Fields that require datetime parsing

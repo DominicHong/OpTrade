@@ -62,7 +62,7 @@ const emptySpotForm: SpotTradeCreate = {
   ccy1_amount: null,
   ccy2_amount: null,
   trade_date: null,
-  value_date: null,
+  settlement_date: null,
   counterparty_name: null,
   portfolio_name: null,
   source: null,
@@ -73,6 +73,7 @@ const spotForm = ref<SpotTradeCreate | SpotTradeUpdate>({ ...emptySpotForm })
 
 const emptyForm: OptionTradeCreate = {
   trade_id: '',
+  trade_date: null,
   ccy_pair: 'USD/CNY',
   trade_type: 'CALL',
   direction: '买入',
@@ -249,6 +250,7 @@ const columns = computed<TableColumn[]>(() => {
     { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
     { key: 'trade_type', label: '类型', sortable: true, width: '60px' },
     { key: 'direction', label: '方向', sortable: true, width: '60px' },
+    { key: 'trade_date', label: '交易日', sortable: true, width: '100px' },
     { key: 'strike', label: '执行价', sortable: true, width: '90px', align: 'right' },
     { key: 'premium_rate', label: premiumRateLabel, sortable: true, width: '90px', align: 'right' },
     { key: 'notional1', label: '名义本金(万)', sortable: true, width: '120px', align: 'right' },
@@ -269,7 +271,7 @@ const spotColumns = computed<TableColumn[]>(() => [
   { key: 'ccy1_amount', label: '货币1金额(万)', sortable: true, width: '120px', align: 'right' as const },
   { key: 'ccy2_amount', label: '货币2金额(万)', sortable: true, width: '120px', align: 'right' as const },
   { key: 'trade_date', label: '交易日', sortable: true, width: '100px' },
-  { key: 'value_date', label: '起息日', sortable: true, width: '100px' },
+  { key: 'settlement_date', label: '清算日', sortable: true, width: '100px' },
   { key: 'counterparty_name', label: '对手方', width: '120px' },
 ])
 
@@ -365,6 +367,7 @@ function openEditModal(trade: OptionTrade) {
   formPortfolioId.value = trade.portfolio_id
   form.value = {
     trade_id: trade.trade_id,
+    trade_date: trade.trade_date,
     ccy_pair: trade.ccy_pair,
     trade_type: trade.trade_type,
     direction: trade.direction,
@@ -436,7 +439,7 @@ function openSpotEditModal(trade: SpotTrade) {
     ccy1_amount: trade.ccy1_amount,
     ccy2_amount: trade.ccy2_amount,
     trade_date: trade.trade_date,
-    value_date: trade.value_date,
+    settlement_date: trade.settlement_date,
     counterparty_name: trade.counterparty_name,
     portfolio_name: trade.portfolio_name,
     source: trade.source,
@@ -553,6 +556,9 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         <template #cell-expiry_date="{ row }">
           {{ formatDate(row.expiry_date as string) }}
         </template>
+        <template #cell-trade_date="{ row }">
+          {{ formatDate(row.trade_date as string) }}
+        </template>
         <template #cell-trade_type="{ row }">
           <span :class="row.trade_type === 'CALL' ? 'badge-call' : 'badge-put'">
             {{ row.trade_type }}
@@ -641,8 +647,8 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         <template #cell-trade_date="{ row }">
           {{ formatDate(row.trade_date as string) }}
         </template>
-        <template #cell-value_date="{ row }">
-          {{ formatDate(row.value_date as string) }}
+        <template #cell-settlement_date="{ row }">
+          {{ formatDate(row.settlement_date as string) }}
         </template>
         <template #cell-actions="{ row }">
           <div class="action-btns" @click.stop>
@@ -809,6 +815,10 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
                 <input v-model.number="form.notional1" type="number" step="10000" placeholder="如 1000000" />
               </div>
               <div class="form-field">
+                <label>交易日</label>
+                <input v-model="form.trade_date" type="date" />
+              </div>
+              <div class="form-field">
                 <label>到期日</label>
                 <input v-model="form.expiry_date" type="date" />
               </div>
@@ -936,8 +946,8 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
                 <input v-model="spotForm.trade_date" type="date" />
               </div>
               <div class="form-field">
-                <label>起息日</label>
-                <input v-model="spotForm.value_date" type="date" />
+                <label>清算日</label>
+                <input v-model="spotForm.settlement_date" type="date" />
               </div>
               <div class="form-field">
                 <label>对手方</label>

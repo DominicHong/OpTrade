@@ -20,7 +20,7 @@ export interface SpotTrade {
 
   // Dates
   trade_date: string | null
-  value_date: string | null
+  settlement_date: string | null
 
   // Status and meta
   source: string | null
@@ -50,8 +50,8 @@ export interface SpotTradeFilterParams {
   event_type?: string
   trade_date_from?: string
   trade_date_to?: string
-  value_date_from?: string
-  value_date_to?: string
+  settlement_date_from?: string
+  settlement_date_to?: string
   search?: string
 }
 
@@ -67,7 +67,7 @@ export interface SpotTradeCreate {
   ccy1_amount?: number | null
   ccy2_amount?: number | null
   trade_date?: string | null
-  value_date?: string | null
+  settlement_date?: string | null
   source?: string | null
   venue?: string | null
 }
@@ -84,7 +84,7 @@ export interface SpotTradeUpdate {
   ccy1_amount?: number | null
   ccy2_amount?: number | null
   trade_date?: string | null
-  value_date?: string | null
+  settlement_date?: string | null
   source?: string | null
   venue?: string | null
 }
