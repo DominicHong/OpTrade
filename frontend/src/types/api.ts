@@ -50,29 +50,19 @@ export interface ImportConfirmResponse {
 
 /** Dashboard types. */
 export interface DashboardSummary {
-  total_trades: number
+  option_trade_count: number
+  spot_trade_count: number
   total_portfolios: number
   total_counterparties: number
-  total_notional1: number
-  notional_by_ccy: Record<string, number>
-  trades_by_type: Record<string, number>
-  trades_by_status: Record<string, number>
 }
 
-export interface RiskMetricsSummary {
-  total_delta: number
-  total_gamma: number
-  total_vega: number
-  total_theta: number
-  total_rho: number
-  total_npv: number
-  trade_count_with_greeks: number
+export interface DashboardAnalysisRequest {
+  start_date: string | null
+  valuation_date: string
+  curve_type: string | null
 }
 
-export interface ExpiryProfile {
-  bucket: string
-  trade_count: number
-  total_notional: number
-  total_delta: number
-  total_gamma: number
+export interface DashboardDefaultsResponse {
+  earliest_trade_date: string | null
+  curve_type: string | null
 }

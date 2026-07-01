@@ -2,10 +2,22 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Counterparty, Portfolio, OptionTrade
-from app.schemas.dashboard import DashboardSummary
+from app.models import Counterparty, CurveDefinition, Portfolio, OptionTrade, SpotTrade
+from app.schemas.dashboard import (
+    DashboardAnalysisRequest,
+    DashboardDefaultsResponse,
+    DashboardSummary,
+)
+from app.schemas.portfolio import AggregatedAnalysisRequest, AggregatedAnalysisResponse
+from app.services.portfolio_service import PortfolioService, get_portfolio_service
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+
+
+def _get_service(
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> PortfolioService:
+    return service
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -14,38 +26,82 @@ def get_dashboard_summary(
 ) -> DashboardSummary:
     """Get aggregate summary for the dashboard."""
 
-    total_trades = session.exec(select(func.count(OptionTrade.id))).one()
+    option_trade_count = session.exec(select(func.count(OptionTrade.id))).one()
+    spot_trade_count = session.exec(select(func.count(SpotTrade.id))).one()
     total_portfolios = session.exec(select(func.count(Portfolio.id))).one()
-    total_counterparties = session.exec(select(func.count(Counterparty.id))).one()
 
-    # Notional by ccy_pair
-    trades = session.exec(
-        select(OptionTrade.ccy_pair, func.sum(OptionTrade.notional1).label("total_notional"))
-        .where(OptionTrade.notional1.isnot(None))
-        .group_by(OptionTrade.ccy_pair)
-    ).all()
-
-    notional_by_ccy: dict[str, float] = {}
-    total_notional: float = 0.0
-    for row in trades:
-        if row[0]:
-            val = float(row[1] or 0)
-            notional_by_ccy[row[0]] = val
-            total_notional += val
-
-    # Trades by type
-    type_counts = session.exec(
-        select(OptionTrade.trade_type, func.count(OptionTrade.id))
-        .where(OptionTrade.trade_type.isnot(None))
-        .group_by(OptionTrade.trade_type)
-    ).all()
-    trades_by_type = {row[0]: row[1] for row in type_counts if row[0]}
+    # Unique counterparties across both option_trades and spot_trades
+    opt_cp_ids = set(
+        session.exec(
+            select(OptionTrade.counterparty_id).where(
+                OptionTrade.counterparty_id.isnot(None)
+            )
+        ).all()
+    )
+    spot_cp_ids = set(
+        session.exec(
+            select(SpotTrade.counterparty_id).where(
+                SpotTrade.counterparty_id.isnot(None)
+            )
+        ).all()
+    )
+    total_counterparties = len(opt_cp_ids | spot_cp_ids)
 
     return DashboardSummary(
-        total_trades=total_trades,
+        option_trade_count=option_trade_count,
+        spot_trade_count=spot_trade_count,
         total_portfolios=total_portfolios,
         total_counterparties=total_counterparties,
-        total_notional1=total_notional,
-        notional_by_ccy=notional_by_ccy,
-        trades_by_type=trades_by_type,
+    )
+
+
+@router.post("/analysis", response_model=AggregatedAnalysisResponse)
+def calculate_dashboard_analysis(
+    request: DashboardAnalysisRequest,
+    session: Session = Depends(get_session),
+    service: PortfolioService = Depends(_get_service),
+) -> AggregatedAnalysisResponse:
+    """Calculate aggregated P&L analysis for ALL portfolios.
+
+    Automatically includes every portfolio in the system.  Does NOT accept
+    per-trade parameter overrides — curve derivation uses default values.
+    """
+    all_portfolio_ids = session.exec(select(Portfolio.id)).all()
+
+    agg_request = AggregatedAnalysisRequest(
+        portfolio_ids=list(all_portfolio_ids),
+        start_date=request.start_date,
+        valuation_date=request.valuation_date,
+        curve_type=request.curve_type,
+    )
+    return service.calculate_aggregated_analysis(session, agg_request)
+
+
+@router.get("/defaults", response_model=DashboardDefaultsResponse)
+def get_dashboard_defaults(
+    session: Session = Depends(get_session),
+    service: PortfolioService = Depends(_get_service),
+) -> DashboardDefaultsResponse:
+    """Return default start_date and curve_type for the dashboard analysis form.
+
+    - ``earliest_trade_date``: the earliest trade_date across ALL portfolios.
+    - ``curve_type``: the first active curve definition's curve_type.
+    """
+    all_portfolio_ids = session.exec(select(Portfolio.id)).all()
+    earliest = (
+        service._find_earliest_trade_date(session, list(all_portfolio_ids))
+        if all_portfolio_ids
+        else None
+    )
+
+    first_curve = session.exec(
+        select(CurveDefinition)
+        .where(CurveDefinition.is_active == True)  # noqa: E712
+        .order_by(CurveDefinition.id)
+    ).first()
+    curve_type = first_curve.curve_type if first_curve else None
+
+    return DashboardDefaultsResponse(
+        earliest_trade_date=earliest.isoformat() if earliest else None,
+        curve_type=curve_type,
     )
