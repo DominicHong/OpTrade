@@ -59,6 +59,17 @@ function exerciseStatusClass(status: string | null | undefined): string {
   if (status === '未行权') return 'status-unexercised'
   return 'status-unexpired'
 }
+
+// Currency exposure in fixed display order
+const CURRENCY_ORDER = ['CNY', 'USD', 'HKD', 'EUR', 'JPY', 'GBP'] as const
+const currencyExposures = computed(() => {
+  const exposures = props.result.summary.currency_exposures
+  if (!exposures) return []
+  return CURRENCY_ORDER.map(ccy => ({
+    ccy,
+    exposure: exposures[ccy] ?? 0,
+  }))
+})
 </script>
 
 <template>
@@ -113,6 +124,17 @@ function exerciseStatusClass(status: string | null | undefined): string {
         </span>
       </div>
       <!-- Reserved for future spot risk indicators -->
+    </div>
+
+    <!-- Currency exposure section -->
+    <h4 class="section-label">即期各币种敞口</h4>
+    <div class="greeks-summary">
+      <div v-for="item in currencyExposures" :key="item.ccy" class="greek-card">
+        <span class="greek-label">{{ item.ccy }} 敞口 (万)</span>
+        <span class="greek-value" :class="item.exposure > 0 ? 'profit-positive' : item.exposure < 0 ? 'profit-negative' : ''">
+          {{ fmt(toWan(item.exposure), 2) }}
+        </span>
+      </div>
     </div>
 
     <!-- Aggregate summary -->

@@ -133,6 +133,7 @@ export interface AggregatedSummary {
   total_option_pnl: number
   total_spot_pnl: number
   total_pnl: number
+  currency_exposures: Record<string, number>
 }
 
 export interface OptionTradeAnalysisDetail {

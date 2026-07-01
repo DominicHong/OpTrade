@@ -859,6 +859,31 @@ class PortfolioService:
             if detail.pnl is not None and detail.error is None:
                 total_spot_pnl += detail.pnl
 
+        # --- Currency exposure (spot trades only) ---
+        TARGET_CURRENCIES = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
+        currency_exposures: dict[str, float] = {c: 0.0 for c in TARGET_CURRENCIES}
+
+        for trade in spot_trades:
+            ccy1 = (trade.ccy1 or "").upper()
+            ccy2 = (trade.ccy2 or "").upper()
+
+            # Fall back to parsing from ccy_pair if ccy1/ccy2 not populated
+            if (not ccy1 or not ccy2) and trade.ccy_pair and "/" in trade.ccy_pair:
+                parts = trade.ccy_pair.upper().split("/")
+                if len(parts) == 2:
+                    if not ccy1:
+                        ccy1 = parts[0]
+                    if not ccy2:
+                        ccy2 = parts[1]
+
+            amt1 = trade.ccy1_amount or 0.0
+            amt2 = trade.ccy2_amount or 0.0
+
+            if ccy1 in TARGET_CURRENCIES:
+                currency_exposures[ccy1] += amt1
+            if ccy2 in TARGET_CURRENCIES:
+                currency_exposures[ccy2] += amt2
+
         # --- 7. Determine portfolio_name ---
         all_names = session.exec(
             select(Portfolio.name).where(Portfolio.id.in_(request.portfolio_ids))
@@ -876,6 +901,7 @@ class PortfolioService:
             total_option_pnl=round(total_premium_pnl + total_exercise_pnl, 2),
             total_spot_pnl=round(total_spot_pnl, 2),
             total_pnl=round(total_premium_pnl + total_exercise_pnl + total_spot_pnl, 2),
+            currency_exposures=currency_exposures,
         )
 
         return AggregatedAnalysisResponse(

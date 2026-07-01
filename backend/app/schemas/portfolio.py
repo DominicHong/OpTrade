@@ -172,6 +172,7 @@ class AggregatedSummary(BaseModel):
     total_option_pnl: float = 0.0
     total_spot_pnl: float = 0.0
     total_pnl: float = 0.0
+    currency_exposures: dict[str, float] = {}
 
 
 class OptionTradeAnalysisDetail(BaseModel):
