@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,15 +14,9 @@ logger = logging.getLogger("optrade.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: create tables, seed data, start background tasks."""
+    """Application lifespan: create tables and seed data."""
     create_db_and_tables()
     _seed_curve_definitions()
-    # Run crawl in a dedicated thread with its own ProactorEventLoop.
-    #  uvicorn uses SelectorEventLoop on Windows which doesn't support
-    #  subprocesses — but Playwright needs subprocess support to launch
-    #  the browser.  A separate thread with asyncio.run() solves this.
-    crawl_thread = threading.Thread(target=_background_crawl, daemon=True)
-    crawl_thread.start()
     yield
 
 
@@ -58,61 +50,6 @@ def _seed_curve_definitions() -> None:
             )
             session.commit()
             logger.info("Seeded default curve definition: fx_implied_rate")
-
-
-def _background_crawl() -> None:
-    """Run FX implied rate crawl in a dedicated thread with its own event loop.
-
-    Must run in a separate thread because uvicorn's SelectorEventLoop on
-    Windows doesn't support asyncio subprocesses (needed by Playwright).
-    Failure is logged but never propagated — this is a best-effort task.
-
-    Uses explicit loop management (instead of ``asyncio.run()``) so that
-    Playwright browser subprocesses can be properly cleaned up before the
-    loop closes, avoiding "operation on closed pipe" errors on shutdown.
-    """
-
-    async def _run() -> None:
-        try:
-            await asyncio.sleep(3)  # let the server start first
-
-            from app.services.curve_service import CurveService
-
-            with Session(engine) as session:
-                service = CurveService()
-                result = await service.trigger_crawl(session)
-
-            logger.info(
-                "Background crawl completed: status=%s, added=%d, fetched=%d days",
-                result.status,
-                result.records_added,
-                len(result.dates_fetched),
-            )
-        except Exception:
-            logger.warning(
-                "Background crawl failed (startup will continue normally):",
-                exc_info=True,
-            )
-
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(_run())
-    except Exception:
-        pass
-    finally:
-        # Cancel all pending tasks to give them a chance to clean up
-        # (e.g. Playwright browser subprocess).
-        pending = asyncio.all_tasks(loop)
-        if pending:
-            for task in pending:
-                task.cancel()
-            try:
-                loop.run_until_complete(
-                    asyncio.gather(*pending, return_exceptions=True)
-                )
-            except Exception:
-                pass
-        loop.close()
 
 
 def create_app() -> FastAPI:
