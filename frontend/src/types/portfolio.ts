@@ -111,3 +111,77 @@ export interface PortfolioGreeksResponse {
   curve_valuation_date: string | null
   trades: OptionTradeGreeksDetail[]
 }
+
+// ---------------------------------------------------------------------------
+// Multi-portfolio aggregated P&L analysis
+// ---------------------------------------------------------------------------
+
+export interface AggregatedAnalysisRequest {
+  portfolio_ids: number[]
+  start_date?: string | null
+  valuation_date: string
+  curve_type?: string | null
+  trade_params?: OptionTradeParamsOverride[]
+}
+
+export interface AggregatedSummary {
+  total_delta: number
+  total_gamma: number
+  total_npv: number
+  total_option_premium_pnl: number
+  total_option_exercise_pnl: number
+  total_option_pnl: number
+  total_spot_pnl: number
+  total_pnl: number
+}
+
+export interface OptionTradeAnalysisDetail {
+  trade_id: number
+  trade_id_str: string | null
+  ccy_pair: string | null
+  option_type: string | null
+  direction: string | null
+  strike: number | null
+  notional1: number | null
+  trade_date: string | null
+  expiry_date: string | null
+  exercise_status: string | null
+  delta: number | null
+  gamma: number | null
+  npv: number | null
+  premium: number | null
+  premium_pnl: number | null
+  exercise_pnl: number | null
+  total_pnl: number | null
+  error: string | null
+}
+
+export interface SpotTradeAnalysisDetail {
+  trade_id: number
+  trade_id_str: string | null
+  ccy_pair: string | null
+  direction: string | null
+  deal_price: number | null
+  market_rate: number | null
+  adjusted_deal_price: number | null
+  notional: number | null
+  trade_date: string | null
+  settlement_date: string | null
+  pnl: number | null
+  is_derivative: boolean
+  error: string | null
+}
+
+export interface AggregatedAnalysisResponse {
+  portfolio_name: string
+  portfolio_count: number
+  option_trade_count: number
+  spot_trade_count: number
+  start_date: string | null
+  valuation_date: string | null
+  curve_type: string | null
+  curve_valuation_date: string | null
+  summary: AggregatedSummary
+  option_trades: OptionTradeAnalysisDetail[]
+  spot_trades: SpotTradeAnalysisDetail[]
+}

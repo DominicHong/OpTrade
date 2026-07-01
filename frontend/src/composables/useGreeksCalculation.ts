@@ -1,6 +1,8 @@
 import { ref } from 'vue'
-import { fetchPortfolioGreeks, resolvePortfolioParams } from '@/api/portfolios'
+import { fetchAggregatedGreeks, fetchPortfolioGreeks, resolvePortfolioParams } from '@/api/portfolios'
 import type {
+  AggregatedAnalysisRequest,
+  AggregatedAnalysisResponse,
   PortfolioGreeksRequest,
   PortfolioGreeksResponse,
   OptionTradeParamsResolved,
@@ -33,13 +35,18 @@ export interface EditableOptionTradeParams {
 export function useGreeksCalculation() {
   // Common parameters
   const valuationDate = ref<string>(new Date().toISOString().slice(0, 10))
+  const startDate = ref<string | null>(null)
   const curveType = ref<string | null>(null)
+
+  // Multi-portfolio selection
+  const selectedPortfolioIds = ref<number[]>([])
 
   // Per-option-trade params (populated by resolve-params)
   const tradeParams = ref<EditableOptionTradeParams[]>([])
 
   // Results
   const result = ref<PortfolioGreeksResponse | null>(null)
+  const aggregatedResult = ref<AggregatedAnalysisResponse | null>(null)
   const loading = ref(false)
   const resolving = ref(false)
   const error = ref<string | null>(null)
@@ -140,12 +147,55 @@ export function useGreeksCalculation() {
     }
   }
 
+  /** Build the request and call the aggregated analysis endpoint. */
+  async function calculateAggregated(portfolioIds: number[]) {
+    if (portfolioIds.length === 0) return
+
+    loading.value = true
+    error.value = null
+    try {
+      const overrides: OptionTradeParamsOverride[] = tradeParams.value
+        .filter((tp) => {
+          return (
+            tp.rfRateBase != null ||
+            tp.rfRateQuote != null ||
+            tp.spot != null ||
+            tp.volatility != null
+          )
+        })
+        .map((tp) => ({
+          trade_id: tp.tradeId,
+          rf_rate_base: tp.rfRateBase != null ? tp.rfRateBase / 100 : null,
+          rf_rate_quote: tp.rfRateQuote != null ? tp.rfRateQuote / 100 : null,
+          spot: tp.spot,
+          volatility: tp.volatility != null ? tp.volatility / 100 : null,
+        }))
+
+      const request: AggregatedAnalysisRequest = {
+        portfolio_ids: portfolioIds,
+        start_date: startDate.value,
+        valuation_date: valuationDate.value,
+        curve_type: curveType.value,
+        trade_params: overrides,
+      }
+      aggregatedResult.value = await fetchAggregatedGreeks(request)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : '聚合分析计算失败'
+      aggregatedResult.value = null
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     // state
     valuationDate,
+    startDate,
     curveType,
+    selectedPortfolioIds,
     tradeParams,
     result,
+    aggregatedResult,
     loading,
     resolving,
     error,
@@ -153,6 +203,7 @@ export function useGreeksCalculation() {
     resolveParams,
     updateTradeParam,
     calculate,
+    calculateAggregated,
     resetResult,
     resetTradeParams,
   }

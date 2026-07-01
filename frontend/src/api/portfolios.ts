@@ -1,5 +1,7 @@
 import apiClient from './client'
 import type {
+  AggregatedAnalysisRequest,
+  AggregatedAnalysisResponse,
   Portfolio,
   PortfolioCreate,
   PortfolioGreeksRequest,
@@ -52,4 +54,20 @@ export async function fetchPortfolioGreeks(
 ): Promise<PortfolioGreeksResponse> {
   const { data } = await apiClient.post(`/portfolios/${portfolioId}/greeks`, params)
   return data
+}
+
+export async function fetchAggregatedGreeks(
+  params: AggregatedAnalysisRequest,
+): Promise<AggregatedAnalysisResponse> {
+  const { data } = await apiClient.post('/portfolios/aggregate', params)
+  return data
+}
+
+export async function fetchEarliestTradeDate(
+  portfolioIds: number[],
+): Promise<string | null> {
+  const { data } = await apiClient.get('/portfolios/earliest-trade-date', {
+    params: { portfolio_ids: portfolioIds.join(',') },
+  })
+  return data.earliest_trade_date ?? null
 }

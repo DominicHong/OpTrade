@@ -437,6 +437,31 @@ class CurveService:
         }
 
     # ------------------------------------------------------------------
+    # Spot rate lookup (for spot P&L and exercise P&L)
+    # ------------------------------------------------------------------
+
+    def get_spot_rate_for_date(
+        self,
+        session: Session,
+        target_date: date,
+        foreign_currency: str,
+    ) -> float | None:
+        """Return the spot rate for *target_date* and *foreign_currency*.
+
+        Uses the nearest curve date <= target_date.  Returns ``None`` when
+        no curve data is available for that currency.
+        """
+        curve_date = self._find_nearest_curve_date(
+            session, target_date, foreign_currency,
+        )
+        if curve_date is None:
+            return None
+        _, _, _, spot = self._get_curve_data_for_date(
+            session, curve_date, foreign_currency,
+        )
+        return spot
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 

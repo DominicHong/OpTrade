@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from app.database import get_session
 from app.schemas.portfolio import (
+    AggregatedAnalysisRequest,
+    AggregatedAnalysisResponse,
     PortfolioCreate,
     PortfolioGreeksRequest,
     PortfolioGreeksResponse,
@@ -39,6 +41,27 @@ def create_portfolio(
 ) -> PortfolioRead:
     """Create a new portfolio."""
     return service.create_portfolio(session, data)
+
+
+@router.get("/earliest-trade-date")
+def get_earliest_trade_date(
+    portfolio_ids: str,
+    session: Session = Depends(get_session),
+    service: PortfolioService = Depends(_service),
+) -> dict[str, str | None]:
+    """Return the earliest trade_date across selected portfolios.
+
+    ``portfolio_ids`` is a comma-separated list of portfolio IDs.
+    """
+    try:
+        ids = [int(x.strip()) for x in portfolio_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid portfolio_ids format")
+    if not ids:
+        raise HTTPException(status_code=400, detail="At least one portfolio_id is required")
+
+    earliest = service._find_earliest_trade_date(session, ids)
+    return {"earliest_trade_date": earliest.isoformat() if earliest else None}
 
 
 @router.get("/{portfolio_id}", response_model=PortfolioRead)
@@ -105,3 +128,21 @@ def calculate_portfolio_greeks(
     ``trade_params`` take priority over curve-derived values.
     """
     return service.calculate_greeks(session, portfolio_id, request)
+
+
+@router.post("/aggregate", response_model=AggregatedAnalysisResponse)
+def calculate_aggregated_analysis(
+    request: AggregatedAnalysisRequest,
+    session: Session = Depends(get_session),
+    service: PortfolioService = Depends(_service),
+) -> AggregatedAnalysisResponse:
+    """Calculate aggregated P&L across multiple portfolios.
+
+    Accepts multiple portfolio IDs and a date range (start_date to valuation_date).
+    Computes option P&L with exercise-aware logic and spot trade P&L using
+    curve-derived market rates.  Supported currency pairs: USD/CNY, EUR/CNY,
+    GBP/CNY, HKD/CNY, JPY/CNY.
+    """
+    if not request.portfolio_ids:
+        raise HTTPException(status_code=400, detail="At least one portfolio_id is required")
+    return service.calculate_aggregated_analysis(session, request)

@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Portfolio, OptionTrade
+from app.models import Portfolio, OptionTrade, SpotTrade
 from app.schemas.portfolio import (
     PortfolioCreate,
     PortfolioGreeksRequest,
@@ -88,9 +88,13 @@ class PortfolioService:
     # ------------------------------------------------------------------
 
     def _trade_count(self, session: Session, portfolio_id: int) -> int:
-        return session.exec(
+        opt_count = session.exec(
             select(func.count(OptionTrade.id)).where(OptionTrade.portfolio_id == portfolio_id)
         ).one()
+        spot_count = session.exec(
+            select(func.count(SpotTrade.id)).where(SpotTrade.portfolio_id == portfolio_id)
+        ).one()
+        return opt_count + spot_count
 
     def _to_read(self, session: Session, portfolio: Portfolio) -> PortfolioRead:
         return PortfolioRead(
@@ -150,7 +154,7 @@ class PortfolioService:
         if count > 0:
             raise HTTPException(
                 status_code=409,
-                detail=f"Cannot delete portfolio with {count} option trades. Reassign or delete trades first.",
+                detail=f"Cannot delete portfolio with {count} trades. Reassign or delete trades first.",
             )
 
         session.delete(portfolio)
@@ -470,6 +474,422 @@ class PortfolioService:
             curve_type=request.curve_type,
             curve_valuation_date=curve_valuation_date,
             trades=trade_details,
+        )
+
+
+    # ------------------------------------------------------------------
+    # Multi-portfolio aggregated P&L analysis
+    # ------------------------------------------------------------------
+
+    def _find_earliest_trade_date(
+        self, session: Session, portfolio_ids: list[int],
+    ) -> date | None:
+        """Return the earliest trade_date across option & spot trades in given portfolios."""
+
+        min_option = session.exec(
+            select(func.min(OptionTrade.trade_date)).where(
+                OptionTrade.portfolio_id.in_(portfolio_ids),
+            )
+        ).one()
+        min_spot = session.exec(
+            select(func.min(SpotTrade.trade_date)).where(
+                SpotTrade.portfolio_id.in_(portfolio_ids),
+            )
+        ).one()
+
+        candidates: list[date] = [d for d in (min_option, min_spot) if d is not None]
+        return min(candidates) if candidates else None
+
+    def _resolve_spot_params(
+        self,
+        session: Session,
+        ccy_pair: str,
+        valuation_date: date,
+        curve_type: str | None,
+    ) -> tuple[float | None, str | None]:
+        """Resolve market rate for a spot trade's currency pair.
+
+        Returns:
+            ``(market_rate, error)`` — exactly one is non-None.
+        """
+        from app.schemas.portfolio import SUPPORTED_CCY_PAIRS
+        from app.utils.curve_helpers import extract_foreign_currency
+
+        if not ccy_pair or "/" not in ccy_pair:
+            return None, f"Invalid currency pair: {ccy_pair!r}"
+
+        if ccy_pair.upper() not in SUPPORTED_CCY_PAIRS:
+            return None, f"Unsupported currency pair: {ccy_pair}"
+
+        try:
+            foreign_ccy = extract_foreign_currency(ccy_pair)
+        except ValueError as e:
+            return None, str(e)
+
+        if foreign_ccy is None:
+            return None, f"Quote currency is not CNY: {ccy_pair}"
+
+        market_rate = self.curve_service.get_spot_rate_for_date(
+            session, valuation_date, foreign_ccy,
+        )
+        if market_rate is None:
+            return None, f"No curve data for {foreign_ccy} at {valuation_date}"
+
+        return market_rate, None
+
+    def _resolve_expiry_spot_rate(
+        self,
+        session: Session,
+        ccy_pair: str,
+        expiry_date: date,
+    ) -> float | None:
+        """Get the market spot rate at an option's expiry date.
+
+        Returns ``None`` when no curve data is available.
+        """
+        from app.utils.curve_helpers import extract_foreign_currency
+
+        try:
+            foreign_ccy = extract_foreign_currency(ccy_pair)
+        except ValueError:
+            return None
+        if foreign_ccy is None:
+            return None
+
+        return self.curve_service.get_spot_rate_for_date(
+            session, expiry_date, foreign_ccy,
+        )
+
+    def _process_spot_trade(
+        self,
+        session: Session,
+        trade,
+        valuation_date: date,
+        curve_type: str | None,
+        is_derivative: bool,
+        expiry_spot_rate: float | None,
+    ) -> "SpotTradeAnalysisDetail":
+        """Process a single spot trade for P&L calculation."""
+        from app.schemas.portfolio import SpotTradeAnalysisDetail
+
+        detail = SpotTradeAnalysisDetail(
+            trade_id=trade.id,
+            trade_id_str=trade.trade_id,
+            ccy_pair=trade.ccy_pair,
+            direction=trade.direction,
+            deal_price=trade.deal_price,
+            notional=trade.ccy1_amount,
+            trade_date=trade.trade_date,
+            settlement_date=trade.settlement_date,
+            is_derivative=is_derivative,
+        )
+
+        if not trade.ccy_pair:
+            detail.error = "Missing currency pair"
+            return detail
+
+        market_rate, error = self._resolve_spot_params(
+            session, trade.ccy_pair, valuation_date, curve_type,
+        )
+        if error:
+            detail.error = error
+            return detail
+
+        detail.market_rate = market_rate
+
+        # Determine adjusted deal price
+        if is_derivative and expiry_spot_rate is not None:
+            adjusted_deal = expiry_spot_rate
+        else:
+            adjusted_deal = trade.deal_price
+
+        detail.adjusted_deal_price = adjusted_deal
+
+        if adjusted_deal is None or market_rate is None or trade.ccy1_amount is None:
+            detail.error = "Missing data for P&L calculation (deal_price, market_rate, or notional)"
+            return detail
+
+        # P&L = (market_rate - adjusted_deal_price) * notional
+        # ccy1_amount already carries direction sign (positive=long, negative=short)
+        pnl = (market_rate - adjusted_deal) * trade.ccy1_amount
+        detail.pnl = round(pnl, 2)
+
+        return detail
+
+    def calculate_aggregated_analysis(
+        self,
+        session: Session,
+        request: "AggregatedAnalysisRequest",
+    ) -> "AggregatedAnalysisResponse":
+        """Calculate aggregated P&L across multiple portfolios.
+
+        Queries option and spot trades for the selected portfolios whose
+        ``trade_date`` falls between ``start_date`` and ``valuation_date``,
+        then computes per-trade P&L with the new exercise-aware option
+        algorithm and standard spot P&L algorithm.
+        """
+        from app.schemas.portfolio import (
+            AggregatedAnalysisRequest,
+            AggregatedAnalysisResponse,
+            AggregatedSummary,
+            OptionTradeAnalysisDetail,
+            SpotTradeAnalysisDetail,
+        )
+
+        # --- 1. Resolve start_date ---
+        start_date = request.start_date or self._find_earliest_trade_date(
+            session, request.portfolio_ids,
+        )
+        valuation_date = request.valuation_date
+
+        # --- 2. Query option trades in date range ---
+        option_trades = session.exec(
+            select(OptionTrade).where(
+                OptionTrade.portfolio_id.in_(request.portfolio_ids),
+                OptionTrade.trade_date >= start_date,
+                OptionTrade.trade_date <= valuation_date,
+            )
+        ).all()
+
+        # --- 3. Query spot trades in date range ---
+        spot_trades = session.exec(
+            select(SpotTrade).where(
+                SpotTrade.portfolio_id.in_(request.portfolio_ids),
+                SpotTrade.trade_date >= start_date,
+                SpotTrade.trade_date <= valuation_date,
+            )
+        ).all()
+
+        # Build spot trade_id → SpotTrade lookup for exercise resolution
+        spot_by_trade_id: dict[str, SpotTrade] = {
+            s.trade_id: s for s in spot_trades
+        }
+
+        # --- 4. Build override lookup ---
+        override_map: dict[int, OptionTradeParamsOverride] = {}
+        for tp in request.trade_params:
+            override_map[tp.trade_id] = tp
+
+        # --- 5. Process option trades ---
+        option_details: list[OptionTradeAnalysisDetail] = []
+        # Map: spot_trade DB id → expiry_spot_rate (for derivative spot adjustment)
+        derivative_spot_map: dict[int, float] = {}
+
+        total_delta = 0.0
+        total_gamma = 0.0
+        total_npv = 0.0
+        total_premium_pnl = 0.0
+        total_exercise_pnl = 0.0
+        curve_valuation_date: date | None = None
+
+        for trade in option_trades:
+            detail = OptionTradeAnalysisDetail(
+                trade_id=trade.id,
+                trade_id_str=trade.trade_id,
+                ccy_pair=trade.ccy_pair,
+                option_type=trade.trade_type,
+                direction=trade.direction,
+                strike=trade.strike,
+                notional1=trade.notional1,
+                trade_date=trade.trade_date,
+                expiry_date=trade.expiry_date,
+                exercise_status=trade.exercise_status,
+            )
+
+            # Validate required fields
+            if not all([trade.strike, trade.expiry_date, trade.trade_type, trade.direction]):
+                detail.error = "Missing required fields (strike, expiry_date, trade_type, direction)"
+                option_details.append(detail)
+                continue
+
+            # Resolve spot/vol/rates
+            override = override_map.get(trade.id)
+            spot, vol, rf_base, rf_quote, cd = self._resolve_params_for_trade(
+                session, trade, valuation_date, override, request.curve_type, None,
+            )
+            if cd is not None:
+                curve_valuation_date = cd
+
+            notional = trade.notional1 or 1.0
+
+            # Premium (normalised to ccy2 per unit)
+            premium_total = _resolve_premium_in_ccy2(
+                trade.premium_amount, trade.premium_currency, trade.ccy_pair, spot,
+            )
+            premium_per_unit = (premium_total / notional) if premium_total is not None else None
+
+            if valuation_date < trade.expiry_date:
+                # --- PRE-EXPIRY: unchanged from existing logic ---
+                greeks = self.greeks_service.calculate_vanilla_greeks(
+                    option_type=trade.trade_type,
+                    direction=trade.direction,
+                    spot=spot,
+                    strike=float(trade.strike),
+                    volatility=vol,
+                    rf_rate_base=rf_base,
+                    rf_rate_quote=rf_quote,
+                    valuation_date=valuation_date,
+                    expiry_date=trade.expiry_date,
+                )
+
+                if greeks.get("error"):
+                    detail.error = greeks["error"]
+                    option_details.append(detail)
+                    continue
+
+                npv = greeks.get("npv") or 0.0
+
+                if premium_per_unit is not None:
+                    if _is_sell(trade.direction):
+                        profit_per_unit = premium_per_unit + npv
+                    else:
+                        profit_per_unit = npv - premium_per_unit
+                else:
+                    profit_per_unit = None
+
+                detail.delta = round(greeks.get("delta") or 0.0, 6)
+                detail.gamma = round(greeks.get("gamma") or 0.0, 6)
+                detail.npv = round(npv, 6)
+                detail.premium = round(premium_per_unit, 6) if premium_per_unit is not None else None
+                detail.premium_pnl = round(profit_per_unit * notional, 2) if profit_per_unit is not None else None
+                detail.exercise_pnl = None
+                detail.total_pnl = detail.premium_pnl
+
+                if detail.delta:
+                    total_delta += detail.delta * notional
+                if detail.gamma:
+                    total_gamma += detail.gamma * notional
+                if detail.npv is not None:
+                    total_npv += detail.npv * notional
+                if detail.premium_pnl is not None:
+                    total_premium_pnl += detail.premium_pnl
+
+            else:
+                # --- EXPIRED / AT-EXPIRY PATH ---
+                # NPV = 0 for expired options (QuantLib returns zeros)
+                greeks = self.greeks_service.calculate_vanilla_greeks(
+                    option_type=trade.trade_type,
+                    direction=trade.direction,
+                    spot=spot,
+                    strike=float(trade.strike),
+                    volatility=vol,
+                    rf_rate_base=rf_base,
+                    rf_rate_quote=rf_quote,
+                    valuation_date=valuation_date,
+                    expiry_date=trade.expiry_date,
+                )
+
+                npv = greeks.get("npv") or 0.0
+                detail.delta = round(greeks.get("delta") or 0.0, 6)
+                detail.gamma = round(greeks.get("gamma") or 0.0, 6)
+                detail.npv = round(npv, 6)
+                detail.premium = round(premium_per_unit, 6) if premium_per_unit is not None else None
+
+                # Premium P&L (with NPV=0 for expired), multiplied by notional for total display
+                if premium_per_unit is not None:
+                    if _is_sell(trade.direction):
+                        detail.premium_pnl = round((premium_per_unit + npv) * notional, 2)
+                    else:
+                        detail.premium_pnl = round((npv - premium_per_unit) * notional, 2)
+
+                # Exercise check
+                exercise_pnl: float | None = None
+                if trade.exercise_derivative_trade_id:
+                    derivative_spot = spot_by_trade_id.get(trade.exercise_derivative_trade_id)
+                    if derivative_spot is not None:
+                        # Option was exercised — compute exercise P&L
+                        market_rate_at_expiry = self._resolve_expiry_spot_rate(
+                            session, trade.ccy_pair or "", trade.expiry_date,
+                        )
+                        if market_rate_at_expiry is not None and trade.strike:
+                            if trade.trade_type.upper() == "CALL":
+                                exercise_value = (market_rate_at_expiry - float(trade.strike)) * notional
+                            else:  # PUT
+                                exercise_value = (float(trade.strike) - market_rate_at_expiry) * notional
+
+                            if _is_sell(trade.direction):
+                                exercise_value = -exercise_value
+
+                            exercise_pnl = exercise_value
+                            derivative_spot_map[derivative_spot.id] = market_rate_at_expiry
+                            detail.exercise_status = "已行权"
+                        else:
+                            exercise_pnl = 0.0
+                            detail.exercise_status = "已行权"
+                    else:
+                        # exercise_derivative_trade_id set but spot not in date range
+                        detail.exercise_status = trade.exercise_status or "未行权"
+                else:
+                    # No exercise_derivative_trade_id → not exercised
+                    detail.exercise_status = trade.exercise_status or "未行权"
+
+                detail.exercise_pnl = round(exercise_pnl, 2) if exercise_pnl is not None else None
+
+                # Total option P&L = premium_pnl + exercise_pnl (both already total amounts)
+                if detail.premium_pnl is not None:
+                    total_pnl_val = detail.premium_pnl + (exercise_pnl or 0.0)
+                    detail.total_pnl = round(total_pnl_val, 2)
+
+                # Aggregate (detail values are already totals)
+                if detail.delta:
+                    total_delta += detail.delta * notional
+                if detail.gamma:
+                    total_gamma += detail.gamma * notional
+                if detail.npv is not None:
+                    total_npv += detail.npv * notional
+                if detail.premium_pnl is not None:
+                    total_premium_pnl += detail.premium_pnl
+                if exercise_pnl is not None:
+                    total_exercise_pnl += exercise_pnl
+
+            option_details.append(detail)
+
+        # --- 6. Process spot trades ---
+        spot_details: list[SpotTradeAnalysisDetail] = []
+        total_spot_pnl = 0.0
+
+        for trade in spot_trades:
+            is_derivative = trade.id in derivative_spot_map
+            expiry_spot = derivative_spot_map.get(trade.id)
+            detail = self._process_spot_trade(
+                session, trade, valuation_date, request.curve_type,
+                is_derivative, expiry_spot,
+            )
+            spot_details.append(detail)
+            if detail.pnl is not None and detail.error is None:
+                total_spot_pnl += detail.pnl
+
+        # --- 7. Determine portfolio_name ---
+        all_names = session.exec(
+            select(Portfolio.name).where(Portfolio.id.in_(request.portfolio_ids))
+        ).all()
+        is_multi = len(request.portfolio_ids) > 1
+        display_name = "多投组" if is_multi else (all_names[0] if all_names else "")
+
+        # --- 8. Build response ---
+        summary = AggregatedSummary(
+            total_delta=round(total_delta, 6),
+            total_gamma=round(total_gamma, 6),
+            total_npv=round(total_npv, 6),
+            total_option_premium_pnl=round(total_premium_pnl, 2),
+            total_option_exercise_pnl=round(total_exercise_pnl, 2),
+            total_option_pnl=round(total_premium_pnl + total_exercise_pnl, 2),
+            total_spot_pnl=round(total_spot_pnl, 2),
+            total_pnl=round(total_premium_pnl + total_exercise_pnl + total_spot_pnl, 2),
+        )
+
+        return AggregatedAnalysisResponse(
+            portfolio_name=display_name,
+            portfolio_count=len(request.portfolio_ids),
+            option_trade_count=len(option_trades),
+            spot_trade_count=len(spot_trades),
+            start_date=start_date,
+            valuation_date=valuation_date,
+            curve_type=request.curve_type,
+            curve_valuation_date=curve_valuation_date,
+            summary=summary,
+            option_trades=option_details,
+            spot_trades=spot_details,
         )
 
 

@@ -142,3 +142,90 @@ class PortfolioGreeksResponse(BaseModel):
     curve_type: str | None = None
     curve_valuation_date: date | None = None
     trades: list[OptionTradeGreeksDetail] = []
+
+
+# ---------------------------------------------------------------------------
+# Multi-portfolio aggregated P&L analysis
+# ---------------------------------------------------------------------------
+
+SUPPORTED_CCY_PAIRS: set[str] = {"USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY"}
+
+
+class AggregatedAnalysisRequest(BaseModel):
+    """Request for multi-portfolio aggregated P&L analysis."""
+
+    portfolio_ids: list[int]
+    start_date: date | None = None
+    valuation_date: date
+    curve_type: str | None = None
+    trade_params: list[OptionTradeParamsOverride] = []
+
+
+class AggregatedSummary(BaseModel):
+    """Aggregated risk and P&L summary across portfolios."""
+
+    total_delta: float = 0.0
+    total_gamma: float = 0.0
+    total_npv: float = 0.0
+    total_option_premium_pnl: float = 0.0
+    total_option_exercise_pnl: float = 0.0
+    total_option_pnl: float = 0.0
+    total_spot_pnl: float = 0.0
+    total_pnl: float = 0.0
+
+
+class OptionTradeAnalysisDetail(BaseModel):
+    """P&L detail for a single option trade in aggregated analysis."""
+
+    trade_id: int
+    trade_id_str: str | None = None
+    ccy_pair: str | None = None
+    option_type: str | None = None
+    direction: str | None = None
+    strike: float | None = None
+    notional1: float | None = None
+    trade_date: date | None = None
+    expiry_date: date | None = None
+    exercise_status: str | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    npv: float | None = None
+    premium: float | None = None
+    premium_pnl: float | None = None
+    exercise_pnl: float | None = None
+    total_pnl: float | None = None
+    error: str | None = None
+
+
+class SpotTradeAnalysisDetail(BaseModel):
+    """P&L detail for a single spot trade in aggregated analysis."""
+
+    trade_id: int
+    trade_id_str: str | None = None
+    ccy_pair: str | None = None
+    direction: str | None = None
+    deal_price: float | None = None
+    market_rate: float | None = None
+    adjusted_deal_price: float | None = None
+    notional: float | None = None
+    trade_date: date | None = None
+    settlement_date: date | None = None
+    pnl: float | None = None
+    is_derivative: bool = False
+    error: str | None = None
+
+
+class AggregatedAnalysisResponse(BaseModel):
+    """Response for multi-portfolio aggregated P&L analysis."""
+
+    portfolio_name: str
+    portfolio_count: int
+    option_trade_count: int
+    spot_trade_count: int
+    start_date: date | None = None
+    valuation_date: date | None = None
+    curve_type: str | None = None
+    curve_valuation_date: date | None = None
+    summary: AggregatedSummary
+    option_trades: list[OptionTradeAnalysisDetail] = []
+    spot_trades: list[SpotTradeAnalysisDetail] = []

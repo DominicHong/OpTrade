@@ -5,6 +5,7 @@ import type { CurveDefinition } from '@/types/curve'
 
 const props = defineProps<{
   valuationDate: string
+  startDate: string | null
   curveType: string | null
   tradeParams: EditableOptionTradeParams[]
   curveDefinitions: CurveDefinition[]
@@ -14,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:valuationDate': [value: string]
+  'update:startDate': [value: string | null]
   'update:curveType': [value: string | null]
   resolveParams: []
   updateTradeParam: [tradeId: number, field: 'rfRateBase' | 'rfRateQuote' | 'spot' | 'volatility', value: number | null]
@@ -71,6 +73,15 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
 
     <!-- Common parameters -->
     <div class="common-params">
+      <div class="param-field">
+        <label for="start-date">起始日</label>
+        <input
+          id="start-date"
+          type="date"
+          :value="startDate"
+          @input="emit('update:startDate', ($event.target as HTMLInputElement).value || null)"
+        />
+      </div>
       <div class="param-field">
         <label for="valuation-date">结束日/估值日</label>
         <input

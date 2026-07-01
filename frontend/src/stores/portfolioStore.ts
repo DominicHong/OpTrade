@@ -6,6 +6,7 @@ import { fetchPortfolios, fetchPortfolio, createPortfolio, updatePortfolio, dele
 export const usePortfolioStore = defineStore('portfolio', () => {
   const portfolios = ref<Portfolio[]>([])
   const currentPortfolio = ref<Portfolio | null>(null)
+  const selectedPortfolioIds = ref<number[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -43,10 +44,35 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     await deletePortfolio(id)
     portfolios.value = portfolios.value.filter(p => p.id !== id)
     if (currentPortfolio.value?.id === id) currentPortfolio.value = null
+    // Remove from multi-select if present
+    const selIdx = selectedPortfolioIds.value.indexOf(id)
+    if (selIdx >= 0) selectedPortfolioIds.value.splice(selIdx, 1)
+  }
+
+  function togglePortfolioSelection(id: number) {
+    const idx = selectedPortfolioIds.value.indexOf(id)
+    if (idx >= 0) {
+      selectedPortfolioIds.value.splice(idx, 1)
+    } else {
+      selectedPortfolioIds.value.push(id)
+    }
+  }
+
+  function selectAllPortfolios() {
+    if (selectedPortfolioIds.value.length === portfolios.value.length) {
+      selectedPortfolioIds.value = []
+    } else {
+      selectedPortfolioIds.value = portfolios.value.map((p) => p.id)
+    }
+  }
+
+  function clearPortfolioSelection() {
+    selectedPortfolioIds.value = []
   }
 
   return {
-    portfolios, currentPortfolio, loading, error,
+    portfolios, currentPortfolio, selectedPortfolioIds, loading, error,
     loadPortfolios, loadPortfolio, addPortfolio, savePortfolio, removePortfolio,
+    togglePortfolioSelection, selectAllPortfolios, clearPortfolioSelection,
   }
 })
