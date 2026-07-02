@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment / .env file."""
 
     app_name: str = "OpTrade"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     debug: bool = False
 
     # Database — absolute path under project root so it is consistent regardless of CWD

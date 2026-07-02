@@ -13,7 +13,7 @@ from io import StringIO
 
 from fastapi import HTTPException
 from sqlalchemy import Select, case
-from sqlmodel import Session, col, delete, func, select
+from sqlmodel import Session, col, func, select
 
 from app.models.curve import CurveDefinition, FxImpliedRate
 from app.schemas.curve import (
@@ -217,35 +217,47 @@ class CurveService:
     def process_uploaded_xlsx(
         self, session: Session, xlsx_bytes: bytes,
     ) -> UploadResult:
-        """Parse an uploaded chinamoney XLSX, clear existing data, then load.
+        """Parse an uploaded chinamoney XLSX and incrementally import.
 
-        The upload replaces all existing FX implied rate rows with the
-        parsed content of the supplied file.
+        Only inserts records that don't already exist (by curve_date,
+        foreign_currency, tenor). Existing records are skipped.
         """
         from app.services.datasources.china_money_crawler import (
             ChinaMoneyCrawler,
         )
 
         records = ChinaMoneyCrawler.parse_xlsx(xlsx_bytes)
-        added = self._replace_all_rates(session, records)
+        if not records:
+            return UploadResult(
+                records_added=0,
+                message="文件中无有效数据，导入跳过。",
+            )
+
+        added = self._insert_new_rates(session, records)
+        skipped = len(records) - added
         return UploadResult(
             records_added=added,
-            message=f"已清空原有数据并导入 {added} 条记录（共解析 {len(records)} 行）。",
+            message=f"已导入 {added} 条记录，跳过 {skipped} 条已存在记录（共解析 {len(records)} 行）。",
         )
 
     @staticmethod
-    def _replace_all_rates(session: Session, records: list[dict]) -> int:
-        """Delete all existing FX implied rate rows and insert the new records."""
-        # Clear existing data
-        session.exec(delete(FxImpliedRate))
-        session.commit()
-
+    def _insert_new_rates(session: Session, records: list[dict]) -> int:
+        """Insert new rate records, skipping existing (curve_date, currency, tenor)."""
         added = 0
         for rec in records:
-            if not all(
-                k in rec for k in ("curve_date", "foreign_currency", "tenor")
-            ):
+            if not all(k in rec for k in ("curve_date", "foreign_currency", "tenor")):
                 continue
+
+            existing = session.exec(
+                select(FxImpliedRate).where(
+                    FxImpliedRate.curve_date == rec["curve_date"],
+                    FxImpliedRate.foreign_currency == rec["foreign_currency"],
+                    FxImpliedRate.tenor == rec["tenor"],
+                )
+            ).first()
+            if existing is not None:
+                continue
+
             rate = FxImpliedRate(
                 curve_date=rec["curve_date"],
                 foreign_currency=rec["foreign_currency"],

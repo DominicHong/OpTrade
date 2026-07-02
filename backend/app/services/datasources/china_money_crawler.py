@@ -40,7 +40,7 @@ _TARGET_PARAMS = {
 }
 
 # Number of past days to seed when the database table is empty.
-_INITIAL_SEED_DAYS = 30
+_INITIAL_SEED_DAYS = 90
 
 # ---------------------------------------------------------------------------
 # XLSX column map (column index → internal dict key)

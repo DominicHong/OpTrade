@@ -95,13 +95,13 @@ const currencyExposures = computed(() => {
         <span class="greek-value">{{ fmt(toWan(result.summary.total_npv), 2) }}</span>
       </div>
       <div class="greek-card greek-profit">
-        <span class="greek-label">期权费损益 (万)</span>
+        <span class="greek-label">估值损益 (万)</span>
         <span class="greek-value" :class="profitColor(result.summary.total_option_premium_pnl)">
           {{ fmt(toWan(result.summary.total_option_premium_pnl), 2) }}
         </span>
       </div>
       <div class="greek-card greek-profit">
-        <span class="greek-label">期权行权损益 (万)</span>
+        <span class="greek-label">行权损益 (万)</span>
         <span class="greek-value" :class="profitColor(result.summary.total_option_exercise_pnl)">
           {{ fmt(toWan(result.summary.total_option_exercise_pnl), 2) }}
         </span>
@@ -115,7 +115,7 @@ const currencyExposures = computed(() => {
     </div>
 
     <!-- Spot P&L section (reserved for future risk indicators) -->
-    <h4 class="section-label">即期</h4>
+    <h4 class="section-label">即期风险指标</h4>
     <div class="greeks-summary">
       <div class="greek-card greek-profit">
         <span class="greek-label">即期损益 (万)</span>
@@ -180,7 +180,7 @@ const currencyExposures = computed(() => {
             <th>Gamma</th>
             <th>NPV</th>
             <th>期权费</th>
-            <th>期权费损益(万)</th>
+            <th>估值损益(万)</th>
             <th>行权损益(万)</th>
             <th>总损益(万)</th>
           </tr>
