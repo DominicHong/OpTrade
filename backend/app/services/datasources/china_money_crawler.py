@@ -197,7 +197,7 @@ class ChinaMoneyCrawler:
             await pw.navigate_to_page(page)
             await pw.wait_for_page_ready(page)
 
-            # Fill form.
+            # Fill form and query before export.
             await pw.set_date_range(page, date_from, date_to)
             await pw.set_dropdowns(
                 page,
@@ -206,6 +206,7 @@ class ChinaMoneyCrawler:
                 spot=_TARGET_PARAMS["spot"],
                 swap=_TARGET_PARAMS["swap"],
             )
+            await pw.click_query_button(page)
 
             # Click export and capture the download.
             async with page.expect_download(timeout=120_000) as download_info:

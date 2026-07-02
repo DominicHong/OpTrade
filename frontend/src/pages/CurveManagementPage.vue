@@ -103,7 +103,7 @@ async function handleFileChange(event: Event) {
   target.value = ''
   if (!file) return
 
-  if (!confirm('上传将清空现有曲线数据并导入新文件，是否继续？')) {
+  if (!confirm('新文件将覆盖现存的相同日期范围的记录，是否继续？')) {
     return
   }
 

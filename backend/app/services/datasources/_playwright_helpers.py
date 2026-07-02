@@ -148,6 +148,39 @@ async def set_dropdowns(
 # ---------------------------------------------------------------------------
 
 
+async def click_query_button(page: Page) -> None:
+    """Click the '查询' button to refresh the result grid.
+
+    The query button is assumed to be a ``<a>`` / ``<button>`` / ``<input>``
+    with text '查询'.  Clicking it is required before the export can return
+    data for the selected date range.
+
+    The page also contains sidebar navigation links (e.g. "汇价查询服务")
+    whose text includes "查询" as a substring — these are hidden inside
+    collapsed menus.  We iterate through matches and click the first
+    **visible** one to avoid targeting a hidden sidebar link.
+    """
+    for selector in (
+        'a:has-text("查询")',
+        'button:has-text("查询")',
+        'input[value="查询"]',
+    ):
+        btn = page.locator(selector)
+        count = await btn.count()
+        for i in range(count):
+            el = btn.nth(i)
+            if await el.is_visible():
+                await el.click()
+                logger.debug("Clicked query button via selector: %s (index %d)", selector, i)
+                await page.wait_for_timeout(1_500)
+                return
+
+    raise RuntimeError(
+        "Cannot find visible '查询' button on chinamoney page. "
+        "The page structure may have changed."
+    )
+
+
 async def click_export_button(page: Page) -> None:
     """Click the '导出Excel' link.
 
