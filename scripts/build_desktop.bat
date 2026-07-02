@@ -19,6 +19,9 @@ echo.
 echo [2/2] Packaging with PyInstaller...
 cd /d "%~dp0\.."
 
+REM playwright (~200MB with browser binaries) is excluded.
+REM The chinamoney auto-crawl feature will be unavailable,
+REM but manual XLSX upload (parse_xlsx) still works via openpyxl.
 pyinstaller ^
   --name "OpTrade" ^
   --windowed ^
@@ -28,6 +31,9 @@ pyinstaller ^
   --paths "backend" ^
   --collect-submodules "app" ^
   --collect-submodules "uvicorn" ^
+  --exclude-module playwright ^
+  --clean ^
+  --noconfirm ^
   "backend/app/desktop/window.py"
 
 echo.

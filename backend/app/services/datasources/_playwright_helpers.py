@@ -20,8 +20,6 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from playwright.async_api import Browser, Page, async_playwright
-
 logger = logging.getLogger("optrade.crawler.playwright")
 
 # Page URL (verified working)
@@ -48,6 +46,8 @@ async def launch_browser(headless: bool = True) -> tuple[Browser, "async_playwri
     ``await browser.close()`` followed by ``await playwright.stop()`` to
     release all subprocess resources cleanly.
     """
+    from playwright.async_api import async_playwright  # noqa: F811
+
     pw = await async_playwright().start()
     try:
         browser = await pw.chromium.launch(

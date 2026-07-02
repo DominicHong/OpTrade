@@ -25,7 +25,6 @@ from app.services.datasources.china_money_crawler import (
     _TARGET_PARAMS,
     ChinaMoneyCrawler,
 )
-from app.services.datasources import _playwright_helpers as pw
 
 logger = logging.getLogger("optrade.crawler.history")
 
@@ -97,6 +96,8 @@ async def download_history(
         "Splitting %s → %s into %d chunk(s) of max %d days",
         start_date, end_date, len(chunks), _CHUNK_DAYS,
     )
+
+    from app.services.datasources import _playwright_helpers as pw
 
     pw_browser, pw_instance = await pw.launch_browser(headless=headless)
     page = await pw_browser.new_page()
