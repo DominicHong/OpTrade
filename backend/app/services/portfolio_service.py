@@ -21,6 +21,10 @@ from app.schemas.portfolio import (
 )
 from app.services.greeks_service import GreeksService
 from app.services.curve_service import CurveService, get_curve_service
+from app.services.exchange_rate_service import (
+    ExchangeRateService,
+    get_exchange_rate_service,
+)
 from app.utils.curve_helpers import extract_foreign_currency
 
 import logging
@@ -30,12 +34,28 @@ logger = logging.getLogger("optrade.service.portfolio")
 
 _SELL_DIRECTIONS = {"sell", "卖出"}
 
+# Currency pairs whose quote currency is CNY — resolved via the FX implied
+# rate curve (existing path).  Non-CNY pairs use ExchangeRateService.
+_CNY_QUOTED_PAIRS: set[str] = {
+    "USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY",
+}
+
 
 def _is_sell(direction: str | None) -> bool:
     """Return True if *direction* represents a short / sell position."""
     if not direction:
         return False
     return direction.lower() in _SELL_DIRECTIONS
+
+
+def _split_ccy_pair(ccy_pair: str | None) -> tuple[str | None, str | None]:
+    """Split ``"USD/CNY"`` → ``("USD", "CNY")``.  Returns ``(None, None)`` if invalid."""
+    if not ccy_pair or "/" not in ccy_pair:
+        return None, None
+    parts = ccy_pair.upper().split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None, None
+    return parts[0], parts[1]
 
 
 def _resolve_premium_in_ccy2(
@@ -73,15 +93,23 @@ class PortfolioService:
         self,
         greeks_service: GreeksService,
         curve_service: CurveService | None = None,
+        exchange_rate_service: ExchangeRateService | None = None,
     ) -> None:
         self.greeks_service = greeks_service
         self._curve_service = curve_service
+        self._exchange_rate_service = exchange_rate_service
 
     @property
     def curve_service(self) -> CurveService:
         if self._curve_service is None:
             self._curve_service = CurveService()
         return self._curve_service
+
+    @property
+    def exchange_rate_service(self) -> ExchangeRateService:
+        if self._exchange_rate_service is None:
+            self._exchange_rate_service = ExchangeRateService()
+        return self._exchange_rate_service
 
     # ------------------------------------------------------------------
     # CRUD helpers
@@ -254,6 +282,11 @@ class PortfolioService:
           1. User override from *override* (if not None)
           2. Curve resolution (if *curve_type* is set and data exists)
           3. Trade defaults → hardcoded defaults
+
+        For CNY-quoted pairs (USD/CNY, EUR/CNY, etc.), curve resolution uses
+        the FX implied rate curve directly.  For cross pairs (EUR/USD, etc.),
+        the spot rate is read from ``ExchangeRateService`` and the two risk-
+        free rates are pulled from each leg's CNY-quoted curve.
         """
         # Start with the hardcoded / trade defaults
         spot: float = trade.spot_rate or 6.8
@@ -262,31 +295,70 @@ class PortfolioService:
         rf_quote: float = 0.03
         resolved_curve_date: date | None = curve_valuation_date
 
+        ccy_pair = (trade.ccy_pair or "").upper()
+        base_ccy, quote_ccy = _split_ccy_pair(ccy_pair)
+        is_cny_quoted = ccy_pair in _CNY_QUOTED_PAIRS
+
         # --- Curve resolution ---
         if curve_type == "fx_implied_rate":
-            try:
-                foreign_ccy = extract_foreign_currency(trade.ccy_pair or "")
-            except ValueError:
-                foreign_ccy = None
+            if is_cny_quoted and base_ccy is not None:
+                # Existing path: CNY-quoted pair → single curve lookup
+                if trade.expiry_date:
+                    days = (trade.expiry_date - valuation_date).days
+                    remaining_years = max(days / 365.0, 0.001)
 
-            if foreign_ccy is not None and trade.expiry_date:
-                days = (trade.expiry_date - valuation_date).days
-                remaining_years = max(days / 365.0, 0.001)
+                    result = self.curve_service.resolve_valuation_params(
+                        session, valuation_date, base_ccy, remaining_years,
+                    )
+                    if result:
+                        if result.get("rf_rate_base") is not None:
+                            rf_base = result["rf_rate_base"]
+                        if result.get("rf_rate_quote") is not None:
+                            rf_quote = result["rf_rate_quote"]
+                        if result.get("spot_rate") is not None:
+                            spot = result["spot_rate"]
+                        if result.get("volatility") is not None:
+                            vol = result["volatility"]
+                        resolved_curve_date = result.get("curve_date")
 
-                result = self.curve_service.resolve_valuation_params(
-                    session, valuation_date, foreign_ccy, remaining_years,
+            elif base_ccy is not None and quote_ccy is not None:
+                # Cross pair (EUR/USD, USD/HKD, ...) — decompose into two
+                # CNY-quoted curve lookups + exchange_rate spot.
+                er_spot = self.exchange_rate_service.get_rate(
+                    session, ccy_pair, valuation_date,
                 )
-                if result:
-                    # Curve-derived values override the defaults
-                    if result.get("rf_rate_base") is not None:
-                        rf_base = result["rf_rate_base"]
-                    if result.get("rf_rate_quote") is not None:
-                        rf_quote = result["rf_rate_quote"]
-                    if result.get("spot_rate") is not None:
-                        spot = result["spot_rate"]
-                    if result.get("volatility") is not None:
-                        vol = result["volatility"]
-                    resolved_curve_date = result.get("curve_date")
+                if er_spot is not None:
+                    spot = er_spot
+
+                if trade.expiry_date:
+                    days = (trade.expiry_date - valuation_date).days
+                    remaining_years = max(days / 365.0, 0.001)
+
+                    # rf_rate_base ← base_ccy/CNY curve's foreign_implied_rate
+                    base_result = self.curve_service.resolve_valuation_params(
+                        session, valuation_date, base_ccy, remaining_years,
+                    )
+                    if base_result:
+                        if base_result.get("rf_rate_base") is not None:
+                            rf_base = base_result["rf_rate_base"]
+                        if resolved_curve_date is None:
+                            resolved_curve_date = base_result.get("curve_date")
+
+                    # rf_rate_quote ← quote_ccy/CNY curve's foreign_implied_rate
+                    # (skip if quote is CNY — already set to CNY rate above)
+                    if quote_ccy != "CNY":
+                        quote_result = self.curve_service.resolve_valuation_params(
+                            session, valuation_date, quote_ccy, remaining_years,
+                        )
+                        if quote_result:
+                            if quote_result.get("rf_rate_base") is not None:
+                                rf_quote = quote_result["rf_rate_base"]
+                            if resolved_curve_date is None:
+                                resolved_curve_date = quote_result.get("curve_date")
+                    else:
+                        # quote is CNY → use CNY risk-free rate from base curve
+                        if base_result and base_result.get("rf_rate_quote") is not None:
+                            rf_quote = base_result["rf_rate_quote"]
 
         # --- User overrides (always take priority) ---
         if override is not None:
@@ -513,7 +585,6 @@ class PortfolioService:
             ``(market_rate, error)`` — exactly one is non-None.
         """
         from app.schemas.portfolio import SUPPORTED_CCY_PAIRS
-        from app.utils.curve_helpers import extract_foreign_currency
 
         if not ccy_pair or "/" not in ccy_pair:
             return None, f"Invalid currency pair: {ccy_pair!r}"
@@ -521,20 +592,23 @@ class PortfolioService:
         if ccy_pair.upper() not in SUPPORTED_CCY_PAIRS:
             return None, f"Unsupported currency pair: {ccy_pair}"
 
-        try:
-            foreign_ccy = extract_foreign_currency(ccy_pair)
-        except ValueError as e:
-            return None, str(e)
+        ccy_pair_upper = ccy_pair.upper()
+        if ccy_pair_upper in _CNY_QUOTED_PAIRS:
+            # CNY-quoted pair → use FX implied rate curve
+            foreign_ccy = ccy_pair_upper.split("/")[0]
+            market_rate = self.curve_service.get_spot_rate_for_date(
+                session, valuation_date, foreign_ccy,
+            )
+            if market_rate is None:
+                return None, f"No curve data for {foreign_ccy} at {valuation_date}"
+            return market_rate, None
 
-        if foreign_ccy is None:
-            return None, f"Quote currency is not CNY: {ccy_pair}"
-
-        market_rate = self.curve_service.get_spot_rate_for_date(
-            session, valuation_date, foreign_ccy,
+        # Cross pair (USD/HKD, EUR/USD, ...) → use ExchangeRateService
+        market_rate = self.exchange_rate_service.get_rate(
+            session, ccy_pair_upper, valuation_date,
         )
         if market_rate is None:
-            return None, f"No curve data for {foreign_ccy} at {valuation_date}"
-
+            return None, f"No exchange rate for {ccy_pair_upper} at {valuation_date}"
         return market_rate, None
 
     def _resolve_expiry_spot_rate(
@@ -547,17 +621,19 @@ class PortfolioService:
 
         Returns ``None`` when no curve data is available.
         """
-        from app.utils.curve_helpers import extract_foreign_currency
-
-        try:
-            foreign_ccy = extract_foreign_currency(ccy_pair)
-        except ValueError:
-            return None
-        if foreign_ccy is None:
+        ccy_pair_upper = (ccy_pair or "").upper()
+        if not ccy_pair_upper or "/" not in ccy_pair_upper:
             return None
 
-        return self.curve_service.get_spot_rate_for_date(
-            session, expiry_date, foreign_ccy,
+        if ccy_pair_upper in _CNY_QUOTED_PAIRS:
+            foreign_ccy = ccy_pair_upper.split("/")[0]
+            return self.curve_service.get_spot_rate_for_date(
+                session, expiry_date, foreign_ccy,
+            )
+
+        # Cross pair
+        return self.exchange_rate_service.get_rate(
+            session, ccy_pair_upper, expiry_date,
         )
 
     def _process_spot_trade(
@@ -675,11 +751,35 @@ class PortfolioService:
         # Map: spot_trade DB id → expiry_spot_rate (for derivative spot adjustment)
         derivative_spot_map: dict[int, float] = {}
 
-        total_delta = 0.0
-        total_gamma = 0.0
-        total_npv = 0.0
-        total_premium_pnl = 0.0
-        total_exercise_pnl = 0.0
+        # Per-currency-pair aggregation (original-currency Greeks + CNY P&L).
+        # delta/gamma are kept in original ccy2/1ccy1 units; P&L items are
+        # converted to CNY using the valuation-date FX rate for ccy2.
+        from app.schemas.portfolio import CcyPairOptionMetrics
+        per_pair: dict[str, CcyPairOptionMetrics] = {}
+        # Cache FX rate lookups: ccy2 → (rate, had_error).  Avoids repeat queries.
+        fx_rate_cache: dict[str, float | None] = {}
+
+        def _get_fx_to_cny(ccy2: str) -> float | None:
+            ccy2_u = ccy2.upper()
+            if ccy2_u in fx_rate_cache:
+                return fx_rate_cache[ccy2_u]
+            rate = self.exchange_rate_service.get_rate_to_cny(session, ccy2_u, valuation_date)
+            fx_rate_cache[ccy2_u] = rate
+            return rate
+
+        def _get_or_create_pair_metrics(ccy_pair: str) -> CcyPairOptionMetrics | None:
+            ccy_pair_u = ccy_pair.upper()
+            if ccy_pair_u not in per_pair:
+                _, quote_ccy = _split_ccy_pair(ccy_pair_u)
+                if quote_ccy is None:
+                    return None
+                fx_rate = _get_fx_to_cny(quote_ccy)
+                per_pair[ccy_pair_u] = CcyPairOptionMetrics(
+                    ccy_pair=ccy_pair_u,
+                    fx_rate_to_cny=fx_rate,
+                )
+            return per_pair[ccy_pair_u]
+
         curve_valuation_date: date | None = None
 
         for trade in option_trades:
@@ -718,6 +818,12 @@ class PortfolioService:
             )
             premium_per_unit = (premium_total / notional) if premium_total is not None else None
 
+            # Determine this trade's ccy2 → CNY FX rate up-front (used for
+            # populating both detail-level *_cny fields and pair aggregation).
+            _, trade_quote_ccy = _split_ccy_pair(trade.ccy_pair)
+            trade_fx_rate = _get_fx_to_cny(trade_quote_ccy) if trade_quote_ccy else None
+            detail.fx_rate_to_cny = trade_fx_rate
+
             if valuation_date < trade.expiry_date:
                 # --- PRE-EXPIRY: unchanged from existing logic ---
                 greeks = self.greeks_service.calculate_vanilla_greeks(
@@ -754,15 +860,6 @@ class PortfolioService:
                 detail.premium_pnl = round(profit_per_unit * notional, 2) if profit_per_unit is not None else None
                 detail.exercise_pnl = None
                 detail.total_pnl = detail.premium_pnl
-
-                if detail.delta:
-                    total_delta += detail.delta * notional
-                if detail.gamma:
-                    total_gamma += detail.gamma * notional
-                if detail.npv is not None:
-                    total_npv += detail.npv * notional
-                if detail.premium_pnl is not None:
-                    total_premium_pnl += detail.premium_pnl
 
             else:
                 # --- EXPIRED / AT-EXPIRY PATH ---
@@ -830,23 +927,40 @@ class PortfolioService:
                     total_pnl_val = detail.premium_pnl + (exercise_pnl or 0.0)
                     detail.total_pnl = round(total_pnl_val, 2)
 
-                # Aggregate (detail values are already totals)
-                if detail.delta:
-                    total_delta += detail.delta * notional
-                if detail.gamma:
-                    total_gamma += detail.gamma * notional
+            # --- CNY conversion for detail-level mirror fields ---
+            if trade_fx_rate is not None:
                 if detail.npv is not None:
-                    total_npv += detail.npv * notional
+                    detail.npv_cny = round(detail.npv * notional * trade_fx_rate, 2)
                 if detail.premium_pnl is not None:
-                    total_premium_pnl += detail.premium_pnl
-                if exercise_pnl is not None:
-                    total_exercise_pnl += exercise_pnl
+                    detail.premium_pnl_cny = round(detail.premium_pnl * trade_fx_rate, 2)
+                if detail.exercise_pnl is not None:
+                    detail.exercise_pnl_cny = round(detail.exercise_pnl * trade_fx_rate, 2)
+                if detail.total_pnl is not None:
+                    detail.total_pnl_cny = round(detail.total_pnl * trade_fx_rate, 2)
+
+            # --- Per-currency-pair aggregation ---
+            pair_metrics = _get_or_create_pair_metrics(trade.ccy_pair or "")
+            if pair_metrics is not None:
+                pair_metrics.trade_count += 1
+                if detail.delta is not None:
+                    pair_metrics.delta += detail.delta * notional
+                if detail.gamma is not None:
+                    pair_metrics.gamma += detail.gamma * notional
+                # NPV / P&L aggregated in CNY (sum of *_cny values)
+                if detail.npv_cny is not None:
+                    pair_metrics.npv_cny += detail.npv_cny
+                if detail.premium_pnl_cny is not None:
+                    pair_metrics.premium_pnl_cny += detail.premium_pnl_cny
+                if detail.exercise_pnl_cny is not None:
+                    pair_metrics.exercise_pnl_cny += detail.exercise_pnl_cny
+                if detail.total_pnl_cny is not None:
+                    pair_metrics.total_option_pnl_cny += detail.total_pnl_cny
 
             option_details.append(detail)
 
         # --- 6. Process spot trades ---
         spot_details: list[SpotTradeAnalysisDetail] = []
-        total_spot_pnl = 0.0
+        total_spot_pnl_cny = 0.0
 
         for trade in spot_trades:
             is_derivative = trade.id in derivative_spot_map
@@ -855,9 +969,17 @@ class PortfolioService:
                 session, trade, valuation_date, request.curve_type,
                 is_derivative, expiry_spot,
             )
+
+            # CNY conversion for spot P&L
+            _, spot_quote_ccy = _split_ccy_pair(trade.ccy_pair)
+            if spot_quote_ccy and detail.pnl is not None and detail.error is None:
+                spot_fx = _get_fx_to_cny(spot_quote_ccy)
+                detail.fx_rate_to_cny = spot_fx
+                if spot_fx is not None:
+                    detail.pnl_cny = round(detail.pnl * spot_fx, 2)
+                    total_spot_pnl_cny += detail.pnl_cny
+
             spot_details.append(detail)
-            if detail.pnl is not None and detail.error is None:
-                total_spot_pnl += detail.pnl
 
         # --- Currency exposure (spot trades only) ---
         TARGET_CURRENCIES = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
@@ -884,23 +1006,37 @@ class PortfolioService:
             if ccy2 in TARGET_CURRENCIES:
                 currency_exposures[ccy2] += amt2
 
-        # --- 7. Determine portfolio_name ---
+        # --- 7. Finalise per-pair metrics (round + compute total_option_pnl_cny) ---
+        option_metrics_list: list[CcyPairOptionMetrics] = []
+        total_option_pnl_cny = 0.0
+        for pair_metrics in per_pair.values():
+            pair_metrics.delta = round(pair_metrics.delta, 6)
+            pair_metrics.gamma = round(pair_metrics.gamma, 6)
+            pair_metrics.npv_cny = round(pair_metrics.npv_cny, 2)
+            pair_metrics.premium_pnl_cny = round(pair_metrics.premium_pnl_cny, 2)
+            pair_metrics.exercise_pnl_cny = round(pair_metrics.exercise_pnl_cny, 2)
+            pair_metrics.total_option_pnl_cny = round(pair_metrics.total_option_pnl_cny, 2)
+            total_option_pnl_cny += pair_metrics.total_option_pnl_cny
+            option_metrics_list.append(pair_metrics)
+
+        # Sort by ccy_pair for stable display
+        option_metrics_list.sort(key=lambda m: m.ccy_pair)
+
+        total_pnl_cny = round(total_option_pnl_cny + total_spot_pnl_cny, 2)
+
+        # --- 8. Determine portfolio_name ---
         all_names = session.exec(
             select(Portfolio.name).where(Portfolio.id.in_(request.portfolio_ids))
         ).all()
         is_multi = len(request.portfolio_ids) > 1
         display_name = "多投组" if is_multi else (all_names[0] if all_names else "")
 
-        # --- 8. Build response ---
+        # --- 9. Build response ---
         summary = AggregatedSummary(
-            total_delta=round(total_delta, 6),
-            total_gamma=round(total_gamma, 6),
-            total_npv=round(total_npv, 6),
-            total_option_premium_pnl=round(total_premium_pnl, 2),
-            total_option_exercise_pnl=round(total_exercise_pnl, 2),
-            total_option_pnl=round(total_premium_pnl + total_exercise_pnl, 2),
-            total_spot_pnl=round(total_spot_pnl, 2),
-            total_pnl=round(total_premium_pnl + total_exercise_pnl + total_spot_pnl, 2),
+            option_metrics_by_ccy_pair=option_metrics_list,
+            total_option_pnl_cny=round(total_option_pnl_cny, 2),
+            total_spot_pnl_cny=round(total_spot_pnl_cny, 2),
+            total_pnl_cny=total_pnl_cny,
             currency_exposures=currency_exposures,
         )
 
@@ -924,4 +1060,5 @@ def get_portfolio_service() -> PortfolioService:
     return PortfolioService(
         greeks_service=GreeksService(),
         curve_service=CurveService(),
+        exchange_rate_service=ExchangeRateService(),
     )

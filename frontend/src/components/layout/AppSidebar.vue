@@ -11,6 +11,7 @@ const navItems = [
   { path: '/option-trades', label: '交易管理', icon: 'trades' },
   { path: '/portfolios', label: '投组管理', icon: 'portfolios' },
   { path: '/curves', label: '曲线管理', icon: 'curves' },
+  { path: '/exchange-rates', label: '汇率管理', icon: 'exchange' },
   { path: '/portfolio', label: '组合分析', icon: 'portfolio' },
   { path: '/scenario', label: '情景分析', icon: 'scenario' },
 ]
@@ -23,6 +24,7 @@ const iconPaths: Record<string, string> = {
   portfolios: 'M20 7h-4l-2-3H8L6 4H2v16h20V7zM4 18V7h2l2-3h6l2 3h4v11H4z',
   scenario: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z',
   curves: 'M3 18v-2a4 4 0 014-4h1a4 4 0 014 4v2M7 8V6a5 5 0 0110 0v2M4 21h16M3 21v-7m18 7v-7',
+  exchange: 'M3 7h14m0 0l-3-3m3 3l-3 3M21 17H7m0 0l3-3m-3 3l3 3',
 }
 
 function navigate(path: string) {

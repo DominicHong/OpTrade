@@ -124,15 +124,29 @@ export interface AggregatedAnalysisRequest {
   trade_params?: OptionTradeParamsOverride[]
 }
 
+export interface CcyPairOptionMetrics {
+  ccy_pair: string
+  // (a) CNY-converted P&L items
+  npv_cny: number
+  premium_pnl_cny: number       // 估值损益
+  exercise_pnl_cny: number      // 行权损益
+  total_option_pnl_cny: number  // 期权总损益
+  // (b) Greeks in original currency (ccy2 / 1 ccy1)
+  delta: number
+  gamma: number
+  // Transparency: FX rate used to convert ccy2 → CNY (1.0 if ccy2 == CNY)
+  fx_rate_to_cny: number | null
+  trade_count: number
+}
+
 export interface AggregatedSummary {
-  total_delta: number
-  total_gamma: number
-  total_npv: number
-  total_option_premium_pnl: number
-  total_option_exercise_pnl: number
-  total_option_pnl: number
-  total_spot_pnl: number
-  total_pnl: number
+  // (1) Option risk metrics — one entry per currency pair
+  option_metrics_by_ccy_pair: CcyPairOptionMetrics[]
+  // (2) Portfolio-level P&L (all CNY)
+  total_option_pnl_cny: number
+  total_spot_pnl_cny: number
+  total_pnl_cny: number
+  // (3) Spot currency exposures (raw)
   currency_exposures: Record<string, number>
 }
 
@@ -154,6 +168,12 @@ export interface OptionTradeAnalysisDetail {
   premium_pnl: number | null
   exercise_pnl: number | null
   total_pnl: number | null
+  // CNY-converted mirror (null when no FX rate available)
+  premium_pnl_cny: number | null
+  exercise_pnl_cny: number | null
+  total_pnl_cny: number | null
+  npv_cny: number | null
+  fx_rate_to_cny: number | null
   error: string | null
 }
 
@@ -169,6 +189,9 @@ export interface SpotTradeAnalysisDetail {
   trade_date: string | null
   settlement_date: string | null
   pnl: number | null
+  // CNY-converted mirror
+  pnl_cny: number | null
+  fx_rate_to_cny: number | null
   is_derivative: boolean
   error: string | null
 }

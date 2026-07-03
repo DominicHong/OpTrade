@@ -148,7 +148,10 @@ class PortfolioGreeksResponse(BaseModel):
 # Multi-portfolio aggregated P&L analysis
 # ---------------------------------------------------------------------------
 
-SUPPORTED_CCY_PAIRS: set[str] = {"USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY"}
+SUPPORTED_CCY_PAIRS: set[str] = {
+    "USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY",
+    "USD/HKD", "USD/JPY", "EUR/USD", "GBP/USD",
+}
 
 
 class AggregatedAnalysisRequest(BaseModel):
@@ -161,17 +164,45 @@ class AggregatedAnalysisRequest(BaseModel):
     trade_params: list[OptionTradeParamsOverride] = []
 
 
-class AggregatedSummary(BaseModel):
-    """Aggregated risk and P&L summary across portfolios."""
+class CcyPairOptionMetrics(BaseModel):
+    """Option risk metrics for a single currency pair.
 
-    total_delta: float = 0.0
-    total_gamma: float = 0.0
-    total_npv: float = 0.0
-    total_option_premium_pnl: float = 0.0
-    total_option_exercise_pnl: float = 0.0
-    total_option_pnl: float = 0.0
-    total_spot_pnl: float = 0.0
-    total_pnl: float = 0.0
+    P&L items are converted to CNY using the valuation-date exchange rate
+    for the pair's quote currency (ccy2).  Greeks are in the original
+    ``ccy2 / 1 ccy1`` unit so they remain applicable to the pair's notional.
+    """
+
+    ccy_pair: str
+    # (a) CNY-converted P&L items
+    npv_cny: float = 0.0
+    premium_pnl_cny: float = 0.0       # 估值损益
+    exercise_pnl_cny: float = 0.0      # 行权损益
+    total_option_pnl_cny: float = 0.0  # 期权总损益
+    # (b) Greeks in original currency
+    delta: float = 0.0
+    gamma: float = 0.0
+    # Transparency: the FX rate used to convert ccy2 → CNY (1.0 if ccy2 == CNY)
+    fx_rate_to_cny: float | None = None
+    # Trade count for context
+    trade_count: int = 0
+
+
+class AggregatedSummary(BaseModel):
+    """Aggregated risk and P&L summary across portfolios (multi-currency).
+
+    All P&L amounts are denominated in CNY (converted via valuation-date
+    exchange rates).  Delta / Gamma are kept per-currency-pair in the
+    original quote currency (ccy2 / 1 ccy1) — they are NOT summed across
+    pairs because that would be financially meaningless.
+    """
+
+    # (1) Option risk metrics — one entry per currency pair with trades
+    option_metrics_by_ccy_pair: list[CcyPairOptionMetrics] = []
+    # (2) Portfolio-level P&L (all CNY)
+    total_option_pnl_cny: float = 0.0       # = Σ option_metrics.total_option_pnl_cny
+    total_spot_pnl_cny: float = 0.0
+    total_pnl_cny: float = 0.0              # = total_option_pnl_cny + total_spot_pnl_cny
+    # (3) Spot currency exposures (raw, unchanged from prior implementation)
     currency_exposures: dict[str, float] = {}
 
 
@@ -195,6 +226,12 @@ class OptionTradeAnalysisDetail(BaseModel):
     premium_pnl: float | None = None
     exercise_pnl: float | None = None
     total_pnl: float | None = None
+    # CNY-converted mirror (for display/audit).  ``None`` when no FX rate available.
+    premium_pnl_cny: float | None = None
+    exercise_pnl_cny: float | None = None
+    total_pnl_cny: float | None = None
+    npv_cny: float | None = None
+    fx_rate_to_cny: float | None = None
     error: str | None = None
 
 
@@ -212,6 +249,9 @@ class SpotTradeAnalysisDetail(BaseModel):
     trade_date: date | None = None
     settlement_date: date | None = None
     pnl: float | None = None
+    # CNY-converted mirror (pnl is in ccy2; pnl_cny = pnl × fx_rate_to_cny)
+    pnl_cny: float | None = None
+    fx_rate_to_cny: float | None = None
     is_derivative: bool = False
     error: str | None = None
 
