@@ -572,6 +572,41 @@ class PortfolioService:
         candidates: list[date] = [d for d in (min_option, min_spot) if d is not None]
         return min(candidates) if candidates else None
 
+    def _empty_aggregated_response(
+        self,
+        request: "AggregatedAnalysisRequest",
+        valuation_date: date,
+    ) -> "AggregatedAnalysisResponse":
+        """Return a zero-filled response when no trades exist."""
+        from app.schemas.portfolio import (
+            AggregatedAnalysisResponse,
+            AggregatedSummary,
+        )
+
+        is_multi = len(request.portfolio_ids) > 1
+        display_name = "多投组" if is_multi else ""
+        TARGET_CURRENCIES = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
+
+        return AggregatedAnalysisResponse(
+            portfolio_name=display_name,
+            portfolio_count=len(request.portfolio_ids),
+            option_trade_count=0,
+            spot_trade_count=0,
+            start_date=request.start_date,
+            valuation_date=valuation_date,
+            curve_type=request.curve_type,
+            curve_valuation_date=valuation_date,
+            summary=AggregatedSummary(
+                option_metrics_by_ccy_pair=[],
+                total_option_pnl_cny=0.0,
+                total_spot_pnl_cny=0.0,
+                total_pnl_cny=0.0,
+                currency_exposures={c: 0.0 for c in TARGET_CURRENCIES},
+            ),
+            option_trades=[],
+            spot_trades=[],
+        )
+
     def _resolve_spot_params(
         self,
         session: Session,
@@ -717,6 +752,13 @@ class PortfolioService:
             session, request.portfolio_ids,
         )
         valuation_date = request.valuation_date
+
+        # If no trades exist in the selected portfolios, return empty result early.
+        # (start_date is None when _find_earliest_trade_date finds no trades.)
+        if start_date is None:
+            return self._empty_aggregated_response(
+                request, valuation_date,
+            )
 
         # --- 2. Query option trades in date range ---
         option_trades = session.exec(
