@@ -17,7 +17,7 @@ from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models import Portfolio, OptionTrade, SpotTrade
 from app.models.curve import FxImpliedRate
@@ -827,6 +827,179 @@ class TestEdgeCases:
         #  splitter returns None for unsupported quote currency resolution)
         opt = resp.option_trades[0]
         assert opt.ccy_pair == "AUD/USD"
+
+
+# ============================================================================
+# Interval P&L — spot trades (trade_date < start_date)
+# ============================================================================
+
+
+class TestSpotIntervalPnl:
+    """When trade_date < start_date, adjusted_deal_price = market_rate(start_date)
+    and pnl reflects only [start_date, val_date]."""
+
+    def test_adjusted_deal_price_uses_start_date_rate(
+        self, service, session, spot_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """spot trade_date=_today(-5), start_date=_today(-1) → adjusted_deal_price
+        should be the curve spot at start_date (≈7.1000), not deal_price (7.0800)."""
+        resp = _aggregate(
+            service, session, [spot_portfolio.id],
+            start_date=_today(-1), valuation_date=_today(0),
+        )
+        sp = [t for t in resp.spot_trades if t.ccy_pair == "USD/CNY"][0]
+
+        assert sp.error is None
+        # adjusted_deal_price should be market_rate(start_date) ≈ 7.1000, NOT 7.0800
+        assert sp.adjusted_deal_price == pytest.approx(7.1000, rel=1e-4)
+        assert sp.adjusted_deal_price != pytest.approx(7.0800, rel=1e-4)
+
+    def test_interval_pnl_is_mark_to_market(
+        self, service, session, spot_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """With fixed curve spot (7.1000 at both dates), interval pnl ≈ 0
+        whereas original pnl = (7.1000 - 7.0800) × 10M = 200,000."""
+        resp_interval = _aggregate(
+            service, session, [spot_portfolio.id],
+            start_date=_today(-1), valuation_date=_today(0),
+        )
+        sp_int = [t for t in resp_interval.spot_trades if t.ccy_pair == "USD/CNY"][0]
+
+        # Both rates are 7.1000 → pnl ≈ 0
+        assert sp_int.pnl == pytest.approx(0.0, abs=0.01)
+
+        # Compare with original mode (start_date = earliest trade_date)
+        resp_orig = _aggregate(
+            service, session, [spot_portfolio.id],
+            start_date=_today(-5), valuation_date=_today(0),
+        )
+        sp_orig = [t for t in resp_orig.spot_trades if t.ccy_pair == "USD/CNY"][0]
+        assert sp_orig.pnl == pytest.approx(200_000.0, rel=1e-3)
+        assert sp_int.pnl != pytest.approx(sp_orig.pnl, rel=1e-3)
+
+    def test_interval_mode_includes_pre_interval_trades(
+        self, service, session, spot_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Trades with trade_date < start_date are still included
+        (the old filter would have excluded them)."""
+        resp = _aggregate(
+            service, session, [spot_portfolio.id],
+            start_date=_today(-1), valuation_date=_today(0),
+        )
+        # All 3 spot trades have trade_date < start_date but should be included
+        assert resp.spot_trade_count == 3
+
+
+# ============================================================================
+# Interval P&L — option trades (trade_date < start_date)
+# ============================================================================
+
+
+class TestOptionIntervalPnl:
+    """When trade_date < start_date, premium_pnl = (NPV(val) - NPV(start)) × notional,
+    and risk metrics (npv, delta, gamma) remain at val_date."""
+
+    def test_risk_metrics_unchanged_by_start_date(
+        self, service, session, multi_ccy_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """NPV, delta, gamma must be identical regardless of start_date."""
+        resp_int = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            start_date=_today(-5), valuation_date=_today(0),
+        )
+        resp_orig = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            start_date=_today(-30), valuation_date=_today(0),
+        )
+
+        for pair in ("USD/CNY", "EUR/USD", "USD/HKD"):
+            opt_int = [t for t in resp_int.option_trades if t.ccy_pair == pair][0]
+            opt_orig = [t for t in resp_orig.option_trades if t.ccy_pair == pair][0]
+
+            assert opt_int.npv == pytest.approx(opt_orig.npv, rel=1e-6)
+            assert opt_int.delta == pytest.approx(opt_orig.delta, rel=1e-6)
+            assert opt_int.gamma == pytest.approx(opt_orig.gamma, rel=1e-6)
+
+    def test_interval_pnl_uses_npv_difference(
+        self, service, session, multi_ccy_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """premium_pnl = (NPV(val) - NPV(start)) × notional when trade_date < start_date."""
+        start = _today(-5)
+        resp = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            start_date=start, valuation_date=_today(0),
+        )
+        opt = [t for t in resp.option_trades if t.ccy_pair == "USD/CNY"][0]
+
+        assert opt.error is None
+        assert opt.exercise_pnl is None  # pre-expiry
+        assert opt.total_pnl == opt.premium_pnl
+
+        # Independently compute NPV at start_date
+        trade = session.exec(
+            select(OptionTrade).where(
+                OptionTrade.portfolio_id == multi_ccy_portfolio.id,
+                OptionTrade.ccy_pair == "USD/CNY",
+            )
+        ).one()
+
+        spot_s, vol_s, rfb_s, rfq_s, _ = service._resolve_params_for_trade(
+            session, trade, start, None, "fx_implied_rate", None,
+        )
+        greeks_start = service.greeks_service.calculate_vanilla_greeks(
+            option_type=trade.trade_type,
+            direction=trade.direction,
+            spot=spot_s,
+            strike=float(trade.strike),
+            volatility=vol_s,
+            rf_rate_base=rfb_s,
+            rf_rate_quote=rfq_s,
+            valuation_date=start,
+            expiry_date=trade.expiry_date,
+        )
+        npv_start = greeks_start.get("npv") or 0.0
+        notional = trade.notional1 or 1.0
+
+        expected = (opt.npv - npv_start) * notional
+        assert opt.premium_pnl == pytest.approx(expected, rel=1e-3)
+
+    def test_interval_pnl_differs_from_original(
+        self, service, session, multi_ccy_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Interval premium_pnl should differ from original (total) premium_pnl."""
+        resp_int = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            start_date=_today(-5), valuation_date=_today(0),
+        )
+        resp_orig = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            start_date=_today(-30), valuation_date=_today(0),
+        )
+
+        opt_int = [t for t in resp_int.option_trades if t.ccy_pair == "USD/CNY"][0]
+        opt_orig = [t for t in resp_orig.option_trades if t.ccy_pair == "USD/CNY"][0]
+
+        # Same NPV (risk metric) but different P&L
+        assert opt_int.npv == pytest.approx(opt_orig.npv, rel=1e-6)
+        assert opt_int.premium_pnl != pytest.approx(opt_orig.premium_pnl, rel=1e-3)
+
+    def test_interval_mode_includes_pre_interval_options(
+        self, service, session, multi_ccy_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Options with trade_date < start_date are still included."""
+        resp = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            start_date=_today(-5), valuation_date=_today(0),
+        )
+        # All 3 options have trade_date < start_date but should be included
+        assert resp.option_trade_count == 3
 
 
 # ============================================================================

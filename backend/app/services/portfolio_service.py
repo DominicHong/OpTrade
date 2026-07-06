@@ -690,8 +690,16 @@ class PortfolioService:
         curve_type: str | None,
         is_derivative: bool,
         expiry_spot_rate: float | None,
+        *,
+        start_date: date | None = None,
     ) -> "SpotTradeAnalysisDetail":
-        """Process a single spot trade for P&L calculation."""
+        """Process a single spot trade for P&L calculation.
+
+        When ``trade_date < start_date``, the position pre-dates the P&L
+        interval.  The ``adjusted_deal_price`` is then set to the market
+        rate at ``start_date`` so that P&L reflects only the
+        ``[start_date, valuation_date]`` window.
+        """
         from app.schemas.portfolio import SpotTradeAnalysisDetail
 
         detail = SpotTradeAnalysisDetail(
@@ -720,7 +728,15 @@ class PortfolioService:
         detail.market_rate = market_rate
 
         # Determine adjusted deal price
-        if is_derivative and expiry_spot_rate is not None:
+        if start_date is not None and trade.trade_date is not None and trade.trade_date < start_date:
+            start_rate, start_err = self._resolve_spot_params(
+                session, trade.ccy_pair, start_date, curve_type,
+            )
+            if start_err or start_rate is None:
+                detail.error = f"Cannot resolve market rate at start_date {start_date}: {start_err}"
+                return detail
+            adjusted_deal = start_rate
+        elif is_derivative and expiry_spot_rate is not None:
             adjusted_deal = expiry_spot_rate
         else:
             adjusted_deal = trade.deal_price
@@ -742,6 +758,8 @@ class PortfolioService:
         self,
         trade,
         valuation_date: date,
+        *,
+        start_date: date | None = None,
     ) -> "SwapTradeAnalysisDetail":
         """Process a single swap trade for P&L calculation.
 
@@ -751,10 +769,16 @@ class PortfolioService:
             buy  ccy1/ccy2 (Buy/Sell):  PnL = (far - near) * |notional|
             sell ccy1/ccy2 (Sell/Buy):  PnL = (near - far) * |notional|
 
-        Accrual rule:
+        Accrual rule (overlap between ``[start_date, valuation_date]`` and
+        ``[near_value_date, far_value_date]``):
+
             - valuation_date <  near_value_date  → PnL = 0  (未起息)
-            - near_value_date ≤ valuation_date < far_value_date → PnL = full × elapsed/total (存续)
+            - near_value_date ≤ valuation_date < far_value_date → PnL = full × overlap/total (存续)
             - valuation_date ≥ far_value_date     → PnL = full (到期)
+
+        When ``start_date`` is provided and later than ``near_value_date``,
+        only the ``[start_date, min(valuation_date, far_value_date)]``
+        portion is recognised.
 
         Return rate (annualised, percent, 2 decimals):
             buy : (far - near) / near × 365 / total_days × 100
@@ -813,25 +837,27 @@ class PortfolioService:
             full_pnl = (near_price - far_price) * notional
             price_diff = near_price - far_price
 
-        # Status + accrual
+        # Status + accrual (overlap between [start_date, val_date] and [near_vd, far_vd])
         if valuation_date < near_vd:
             status = "未起息"
-            pnl = 0.0
         elif valuation_date >= far_vd:
             status = "到期"
-            pnl = full_pnl
         else:
             status = "存续"
-            if total_days > 0:
-                elapsed = (valuation_date - near_vd).days
-                # Clamp elapsed into [0, total_days] for safety
-                if elapsed < 0:
-                    elapsed = 0
-                elif elapsed > total_days:
-                    elapsed = total_days
-                pnl = full_pnl * elapsed / total_days
+
+        if total_days > 0:
+            accrual_start = max(start_date, near_vd) if start_date is not None else near_vd
+            accrual_end = min(valuation_date, far_vd)
+            accrued_days = max(0, (accrual_end - accrual_start).days)
+            pnl = full_pnl * accrued_days / total_days
+            # Clamp to [0, full_pnl] (or [full_pnl, 0] when full_pnl < 0)
+            if full_pnl >= 0:
+                pnl = max(0.0, min(pnl, full_pnl))
             else:
-                pnl = full_pnl
+                pnl = max(full_pnl, min(pnl, 0.0))
+        else:
+            # Degenerate same-day legs
+            pnl = full_pnl if valuation_date >= far_vd else 0.0
 
         detail.status = status
         # normalise -0.0 → 0.0 to avoid "-0.00" display
@@ -852,10 +878,13 @@ class PortfolioService:
     ) -> "AggregatedAnalysisResponse":
         """Calculate aggregated P&L across multiple portfolios.
 
-        Queries option and spot trades for the selected portfolios whose
-        ``trade_date`` falls between ``start_date`` and ``valuation_date``,
-        then computes per-trade P&L with the new exercise-aware option
-        algorithm and standard spot P&L algorithm.
+        Queries option, spot and swap trades for the selected portfolios
+        whose position exists at ``valuation_date`` (i.e. ``trade_date``
+        for spot/option, ``near_value_date`` for swap, both ``<=
+        valuation_date``).  The ``start_date`` does **not** filter trades
+        in or out — it only adjusts the P&L formula for trades dealt
+        before ``start_date`` so that only the ``[start_date,
+        valuation_date]`` portion is recognised.
         """
         from app.schemas.portfolio import (
             AggregatedAnalysisRequest,
@@ -879,20 +908,21 @@ class PortfolioService:
                 request, valuation_date,
             )
 
-        # --- 2. Query option trades in date range ---
+        # --- 2. Query option trades (trade_date <= val_date) ---
+        # A trade is included whenever its position exists at val_date,
+        # regardless of whether trade_date < start_date.  The start_date
+        # only adjusts the P&L formula, not the inclusion filter.
         option_trades = session.exec(
             select(OptionTrade).where(
                 OptionTrade.portfolio_id.in_(request.portfolio_ids),
-                OptionTrade.trade_date >= start_date,
                 OptionTrade.trade_date <= valuation_date,
             )
         ).all()
 
-        # --- 3. Query spot trades in date range ---
+        # --- 3. Query spot trades (trade_date <= val_date) ---
         spot_trades = session.exec(
             select(SpotTrade).where(
                 SpotTrade.portfolio_id.in_(request.portfolio_ids),
-                SpotTrade.trade_date >= start_date,
                 SpotTrade.trade_date <= valuation_date,
             )
         ).all()
@@ -902,12 +932,13 @@ class PortfolioService:
             s.trade_id: s for s in spot_trades
         }
 
-        # --- 3b. Query swap trades in date range ---
+        # --- 3b. Query swap trades (near_value_date <= val_date) ---
+        # Swap uses near_value_date as the reference date for inclusion:
+        # a swap whose near leg hasn't been reached has zero P&L.
         swap_trades = session.exec(
             select(SwapTrade).where(
                 SwapTrade.portfolio_id.in_(request.portfolio_ids),
-                SwapTrade.trade_date >= start_date,
-                SwapTrade.trade_date <= valuation_date,
+                SwapTrade.near_value_date <= valuation_date,
             )
         ).all()
 
@@ -994,89 +1025,46 @@ class PortfolioService:
             trade_fx_rate = _get_fx_to_cny(trade_quote_ccy) if trade_quote_ccy else None
             detail.fx_rate_to_cny = trade_fx_rate
 
-            if valuation_date < trade.expiry_date:
-                # --- PRE-EXPIRY: unchanged from existing logic ---
-                greeks = self.greeks_service.calculate_vanilla_greeks(
-                    option_type=trade.trade_type,
-                    direction=trade.direction,
-                    spot=spot,
-                    strike=float(trade.strike),
-                    volatility=vol,
-                    rf_rate_base=rf_base,
-                    rf_rate_quote=rf_quote,
-                    valuation_date=valuation_date,
-                    expiry_date=trade.expiry_date,
-                )
+            # --- Compute Greeks at val_date (always needed for risk metrics) ---
+            greeks = self.greeks_service.calculate_vanilla_greeks(
+                option_type=trade.trade_type,
+                direction=trade.direction,
+                spot=spot,
+                strike=float(trade.strike),
+                volatility=vol,
+                rf_rate_base=rf_base,
+                rf_rate_quote=rf_quote,
+                valuation_date=valuation_date,
+                expiry_date=trade.expiry_date,
+            )
 
-                if greeks.get("error"):
-                    detail.error = greeks["error"]
-                    option_details.append(detail)
-                    continue
+            if greeks.get("error"):
+                detail.error = greeks["error"]
+                option_details.append(detail)
+                continue
 
-                npv = greeks.get("npv") or 0.0
+            npv_val = greeks.get("npv") or 0.0
+            detail.delta = round(greeks.get("delta") or 0.0, 6)
+            detail.gamma = round(greeks.get("gamma") or 0.0, 6)
+            detail.npv = round(npv_val, 6)
+            detail.premium = round(premium_per_unit, 6) if premium_per_unit is not None else None
 
-                if premium_per_unit is not None:
-                    if _is_sell(trade.direction):
-                        profit_per_unit = premium_per_unit + npv
-                    else:
-                        profit_per_unit = npv - premium_per_unit
-                else:
-                    profit_per_unit = None
-
-                detail.delta = round(greeks.get("delta") or 0.0, 6)
-                detail.gamma = round(greeks.get("gamma") or 0.0, 6)
-                detail.npv = round(npv, 6)
-                detail.premium = round(premium_per_unit, 6) if premium_per_unit is not None else None
-                detail.premium_pnl = round(profit_per_unit * notional, 2) if profit_per_unit is not None else None
-                detail.exercise_pnl = None
-                detail.total_pnl = detail.premium_pnl
-
-            else:
-                # --- EXPIRED / AT-EXPIRY PATH ---
-                # NPV = 0 for expired options (QuantLib returns zeros)
-                greeks = self.greeks_service.calculate_vanilla_greeks(
-                    option_type=trade.trade_type,
-                    direction=trade.direction,
-                    spot=spot,
-                    strike=float(trade.strike),
-                    volatility=vol,
-                    rf_rate_base=rf_base,
-                    rf_rate_quote=rf_quote,
-                    valuation_date=valuation_date,
-                    expiry_date=trade.expiry_date,
-                )
-
-                npv = greeks.get("npv") or 0.0
-                detail.delta = round(greeks.get("delta") or 0.0, 6)
-                detail.gamma = round(greeks.get("gamma") or 0.0, 6)
-                detail.npv = round(npv, 6)
-                detail.premium = round(premium_per_unit, 6) if premium_per_unit is not None else None
-
-                # Premium P&L (with NPV=0 for expired), multiplied by notional for total display
-                if premium_per_unit is not None:
-                    if _is_sell(trade.direction):
-                        detail.premium_pnl = round((premium_per_unit + npv) * notional, 2)
-                    else:
-                        detail.premium_pnl = round((npv - premium_per_unit) * notional, 2)
-
-                # Exercise check
-                exercise_pnl: float | None = None
+            # --- Exercise P&L (if expired and exercised) ---
+            exercise_pnl: float | None = None
+            if valuation_date >= trade.expiry_date:
                 if trade.exercise_derivative_trade_id:
                     derivative_spot = spot_by_trade_id.get(trade.exercise_derivative_trade_id)
                     if derivative_spot is not None:
-                        # Option was exercised — compute exercise P&L
                         market_rate_at_expiry = self._resolve_expiry_spot_rate(
                             session, trade.ccy_pair or "", trade.expiry_date,
                         )
                         if market_rate_at_expiry is not None and trade.strike:
                             if trade.trade_type.upper() == "CALL":
                                 exercise_value = (market_rate_at_expiry - float(trade.strike)) * notional
-                            else:  # PUT
+                            else:
                                 exercise_value = (float(trade.strike) - market_rate_at_expiry) * notional
-
                             if _is_sell(trade.direction):
                                 exercise_value = -exercise_value
-
                             exercise_pnl = exercise_value
                             derivative_spot_map[derivative_spot.id] = market_rate_at_expiry
                             detail.exercise_status = "已行权"
@@ -1084,18 +1072,74 @@ class PortfolioService:
                             exercise_pnl = 0.0
                             detail.exercise_status = "已行权"
                     else:
-                        # exercise_derivative_trade_id set but spot not in date range
                         detail.exercise_status = trade.exercise_status or "未行权"
                 else:
-                    # No exercise_derivative_trade_id → not exercised
                     detail.exercise_status = trade.exercise_status or "未行权"
+            else:
+                detail.exercise_status = trade.exercise_status or "未到期"
 
-                detail.exercise_pnl = round(exercise_pnl, 2) if exercise_pnl is not None else None
+            # --- P&L mode: interval (trade_date < start_date) vs original ---
+            pre_interval = (
+                start_date is not None
+                and trade.trade_date is not None
+                and trade.trade_date < start_date
+            )
 
-                # Total option P&L = premium_pnl + exercise_pnl (both already total amounts)
-                if detail.premium_pnl is not None:
-                    total_pnl_val = detail.premium_pnl + (exercise_pnl or 0.0)
-                    detail.total_pnl = round(total_pnl_val, 2)
+            if pre_interval:
+                # Interval P&L: premium excluded, P&L = value(val) - value(start)
+                if trade.expiry_date <= start_date:
+                    # Expired before interval — no interval P&L from option
+                    detail.premium_pnl = 0.0
+                    detail.exercise_pnl = 0.0
+                else:
+                    # Option alive at start_date — compute NPV(start_date)
+                    spot_s, vol_s, rfb_s, rfq_s, _ = self._resolve_params_for_trade(
+                        session, trade, start_date, None, request.curve_type, None,
+                    )
+                    greeks_start = self.greeks_service.calculate_vanilla_greeks(
+                        option_type=trade.trade_type,
+                        direction=trade.direction,
+                        spot=spot_s,
+                        strike=float(trade.strike),
+                        volatility=vol_s,
+                        rf_rate_base=rfb_s,
+                        rf_rate_quote=rfq_s,
+                        valuation_date=start_date,
+                        expiry_date=trade.expiry_date,
+                    )
+                    if greeks_start.get("error"):
+                        detail.error = greeks_start["error"]
+                        option_details.append(detail)
+                        continue
+
+                    npv_start = greeks_start.get("npv") or 0.0
+                    detail.premium_pnl = round((npv_val - npv_start) * notional, 2)
+                    detail.exercise_pnl = round(exercise_pnl, 2) if exercise_pnl is not None else None
+
+                if detail.premium_pnl is not None and detail.exercise_pnl is not None:
+                    detail.total_pnl = round(detail.premium_pnl + detail.exercise_pnl, 2)
+                elif detail.premium_pnl is not None:
+                    detail.total_pnl = detail.premium_pnl
+            else:
+                # Original algorithm (start_date <= trade_date)
+                if valuation_date < trade.expiry_date:
+                    if premium_per_unit is not None:
+                        if _is_sell(trade.direction):
+                            profit_per_unit = premium_per_unit + npv_val
+                        else:
+                            profit_per_unit = npv_val - premium_per_unit
+                        detail.premium_pnl = round(profit_per_unit * notional, 2)
+                    detail.exercise_pnl = None
+                    detail.total_pnl = detail.premium_pnl
+                else:
+                    if premium_per_unit is not None:
+                        if _is_sell(trade.direction):
+                            detail.premium_pnl = round((premium_per_unit + npv_val) * notional, 2)
+                        else:
+                            detail.premium_pnl = round((npv_val - premium_per_unit) * notional, 2)
+                    detail.exercise_pnl = round(exercise_pnl, 2) if exercise_pnl is not None else None
+                    if detail.premium_pnl is not None:
+                        detail.total_pnl = round(detail.premium_pnl + (exercise_pnl or 0.0), 2)
 
             # --- CNY conversion for detail-level mirror fields ---
             if trade_fx_rate is not None:
@@ -1137,7 +1181,7 @@ class PortfolioService:
             expiry_spot = derivative_spot_map.get(trade.id)
             detail = self._process_spot_trade(
                 session, trade, valuation_date, request.curve_type,
-                is_derivative, expiry_spot,
+                is_derivative, expiry_spot, start_date=start_date,
             )
 
             # CNY conversion for spot P&L
@@ -1156,7 +1200,7 @@ class PortfolioService:
         total_swap_pnl_cny = 0.0
 
         for trade in swap_trades:
-            detail = self._process_swap_trade(trade, valuation_date)
+            detail = self._process_swap_trade(trade, valuation_date, start_date=start_date)
 
             # CNY conversion for swap P&L (pnl is in ccy2)
             _, swap_quote_ccy = _split_ccy_pair(trade.ccy_pair)
