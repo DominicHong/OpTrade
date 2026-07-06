@@ -5,6 +5,7 @@ import PortfolioPnlSummary from './PortfolioPnlSummary.vue'
 import CurrencyExposureGrid from './CurrencyExposureGrid.vue'
 import OptionDetailTable from './OptionDetailTable.vue'
 import SpotDetailTable from './SpotDetailTable.vue'
+import SwapDetailTable from './SwapDetailTable.vue'
 
 const props = defineProps<{
   result: AggregatedAnalysisResponse
@@ -16,7 +17,9 @@ function fmtDate(val: string | null | undefined): string {
 }
 
 const hasAnyTrade = (): boolean =>
-  props.result.option_trades.length > 0 || props.result.spot_trades.length > 0
+  props.result.option_trades.length > 0
+  || props.result.spot_trades.length > 0
+  || props.result.swap_trades.length > 0
 </script>
 
 <template>
@@ -35,6 +38,7 @@ const hasAnyTrade = (): boolean =>
     <PortfolioPnlSummary
       :total-option-pnl-cny="result.summary.total_option_pnl_cny"
       :total-spot-pnl-cny="result.summary.total_spot_pnl_cny"
+      :total-swap-pnl-cny="result.summary.total_swap_pnl_cny"
       :total-pnl-cny="result.summary.total_pnl_cny"
     />
 
@@ -47,6 +51,7 @@ const hasAnyTrade = (): boolean =>
       <span>投组数: {{ result.portfolio_count }}</span>
       <span>期权交易: {{ result.option_trade_count }} 笔</span>
       <span>即期交易: {{ result.spot_trade_count }} 笔</span>
+      <span>掉期交易: {{ result.swap_trade_count }} 笔</span>
       <span v-if="result.start_date">起始日: {{ fmtDate(result.start_date) }}</span>
       <span v-if="result.valuation_date">估值日: {{ fmtDate(result.valuation_date) }}</span>
     </div>
@@ -57,6 +62,7 @@ const hasAnyTrade = (): boolean =>
   <!-- ================================================================ -->
   <OptionDetailTable :trades="result.option_trades" />
   <SpotDetailTable :trades="result.spot_trades" />
+  <SwapDetailTable :trades="result.swap_trades" />
 
   <!-- No data -->
   <div v-if="!hasAnyTrade()" class="card">

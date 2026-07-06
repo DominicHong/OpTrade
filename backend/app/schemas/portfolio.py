@@ -201,7 +201,8 @@ class AggregatedSummary(BaseModel):
     # (2) Portfolio-level P&L (all CNY)
     total_option_pnl_cny: float = 0.0       # = Σ option_metrics.total_option_pnl_cny
     total_spot_pnl_cny: float = 0.0
-    total_pnl_cny: float = 0.0              # = total_option_pnl_cny + total_spot_pnl_cny
+    total_swap_pnl_cny: float = 0.0
+    total_pnl_cny: float = 0.0              # = total_option_pnl_cny + total_spot_pnl_cny + total_swap_pnl_cny
     # (3) Spot currency exposures (raw, unchanged from prior implementation)
     currency_exposures: dict[str, float] = {}
 
@@ -256,6 +257,32 @@ class SpotTradeAnalysisDetail(BaseModel):
     error: str | None = None
 
 
+class SwapTradeAnalysisDetail(BaseModel):
+    """P&L detail for a single swap trade in aggregated analysis.
+
+    ``pnl`` is in the swap's quote currency (ccy2); ``pnl_cny`` is the
+    CNY-converted mirror.  ``return_rate`` is the annualised return in
+    percent (2 decimals).  ``status`` is one of: 未起息 / 存续 / 到期.
+    """
+
+    trade_id: int
+    trade_id_str: str | None = None
+    ccy_pair: str | None = None
+    direction: str | None = None
+    near_deal_price: float | None = None
+    far_deal_price: float | None = None
+    near_value_date: date | None = None
+    far_value_date: date | None = None
+    notional: float | None = None
+    trade_date: date | None = None
+    status: str | None = None
+    pnl: float | None = None          # original currency (ccy2)
+    pnl_cny: float | None = None
+    return_rate: float | None = None  # annualised percent, 2 decimals
+    fx_rate_to_cny: float | None = None
+    error: str | None = None
+
+
 class AggregatedAnalysisResponse(BaseModel):
     """Response for multi-portfolio aggregated P&L analysis."""
 
@@ -263,6 +290,7 @@ class AggregatedAnalysisResponse(BaseModel):
     portfolio_count: int
     option_trade_count: int
     spot_trade_count: int
+    swap_trade_count: int = 0
     start_date: date | None = None
     valuation_date: date | None = None
     curve_type: str | None = None
@@ -270,3 +298,4 @@ class AggregatedAnalysisResponse(BaseModel):
     summary: AggregatedSummary
     option_trades: list[OptionTradeAnalysisDetail] = []
     spot_trades: list[SpotTradeAnalysisDetail] = []
+    swap_trades: list[SwapTradeAnalysisDetail] = []

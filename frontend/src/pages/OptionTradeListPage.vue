@@ -3,9 +3,11 @@ import { onMounted, ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useOptionTradeStore } from '@/stores/optionTradeStore'
 import { useSpotTradeStore } from '@/stores/spotTradeStore'
+import { useSwapTradeStore } from '@/stores/swapTradeStore'
 import { useUiStore } from '@/stores/uiStore'
 import { uploadFile, getColumnMapping } from '@/api/imports'
 import { uploadSpotFile, getSpotColumnMapping as getSpotColumnMappingApi } from '@/api/spotTrades'
+import { uploadSwapFile, getSwapColumnMapping as getSwapColumnMappingApi } from '@/api/swapTrades'
 import DataTable from '@/components/shared/DataTable.vue'
 import SearchInput from '@/components/shared/SearchInput.vue'
 import NumberDisplay from '@/components/shared/NumberDisplay.vue'
@@ -14,6 +16,7 @@ import PortfolioAutocomplete from '@/components/trade/PortfolioAutocomplete.vue'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { OptionTrade, OptionTradeCreate, OptionTradeUpdate } from '@/types/optionTrade'
 import type { SpotTrade, SpotTradeCreate, SpotTradeUpdate } from '@/types/spotTrade'
+import type { SwapTrade, SwapTradeCreate, SwapTradeUpdate } from '@/types/swapTrade'
 import type { ImportConfirmResponse } from '@/types/api'
 import { formatDate, toWan } from '@/utils/format'
 import { useModalGuard } from '@/composables/useModalGuard'
@@ -21,9 +24,11 @@ import { useModalGuard } from '@/composables/useModalGuard'
 const router = useRouter()
 const store = useOptionTradeStore()
 const spotStore = useSpotTradeStore()
+const swapStore = useSwapTradeStore()
 const ui = useUiStore()
 const search = ref('')
 const spotSearch = ref('')
+const swapSearch = ref('')
 
 // --- Tab state ---
 const activeTab = ref<'list' | 'import' | 'mapping'>('list')
@@ -32,9 +37,10 @@ const activeTab = ref<'list' | 'import' | 'mapping'>('list')
 const importFile = ref<File | null>(null)
 const importLoading = ref(false)
 const importResult = ref<ImportConfirmResponse | null>(null)
-const importType = ref<'option' | 'spot'>('option')
+const importType = ref<'option' | 'spot' | 'swap'>('option')
 const columnMapping = ref<Record<string, string>>({})
 const spotColumnMapping = ref<Record<string, string>>({})
+const swapColumnMapping = ref<Record<string, string>>({})
 
 // --- Trade form modal ---
 const showModal = ref(false)
@@ -70,6 +76,38 @@ const emptySpotForm: SpotTradeCreate = {
 }
 
 const spotForm = ref<SpotTradeCreate | SpotTradeUpdate>({ ...emptySpotForm })
+
+// --- Swap trade form modal ---
+const showSwapModal = ref(false)
+const swapModalMode = ref<'create' | 'edit'>('create')
+const swapFormError = ref<string | null>(null)
+const swapFormLoading = ref(false)
+const swapEditingId = ref<number | null>(null)
+const swapFormPortfolioId = ref<number | null>(null)
+
+const emptySwapForm: SwapTradeCreate = {
+  trade_id: '',
+  ccy_pair: 'USD/CNY',
+  direction: 'Buy/Sell',
+  swap_type: null,
+  event_type: '正常',
+  tenor: null,
+  spread: null,
+  near_value_date: null,
+  near_deal_price: null,
+  near_ccy1_amount: null,
+  far_value_date: null,
+  far_deal_price: null,
+  far_ccy1_amount: null,
+  counterparty_name: null,
+  portfolio_name: null,
+  trade_date: null,
+  source: null,
+  venue: null,
+  comments: null,
+}
+
+const swapForm = ref<SwapTradeCreate | SwapTradeUpdate>({ ...emptySwapForm })
 
 const emptyForm: OptionTradeCreate = {
   trade_id: '',
@@ -177,6 +215,8 @@ const selectedIds = ref<number[]>([])
 const showBatchDeleteConfirm = ref(false)
 const spotSelectedIds = ref<number[]>([])
 const showSpotBatchDeleteConfirm = ref(false)
+const swapSelectedIds = ref<number[]>([])
+const showSwapBatchDeleteConfirm = ref(false)
 
 function onSelectionChange(ids: number[]) {
   selectedIds.value = ids
@@ -237,6 +277,31 @@ function cancelSpotBatchDelete() {
   showSpotBatchDeleteConfirm.value = false
 }
 
+function onSwapSelectionChange(ids: number[]) {
+  swapSelectedIds.value = ids
+}
+
+function confirmSwapBatchDelete() {
+  if (swapSelectedIds.value.length === 0) return
+  showSwapBatchDeleteConfirm.value = true
+}
+
+async function doSwapBatchDelete() {
+  try {
+    const count = await swapStore.batchDelete(swapSelectedIds.value)
+    ui.addNotification('success', `已删除 ${count} 条掉期交易`)
+    swapSelectedIds.value = []
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
+  } finally {
+    showSwapBatchDeleteConfirm.value = false
+  }
+}
+
+function cancelSwapBatchDelete() {
+  showSwapBatchDeleteConfirm.value = false
+}
+
 const columns = computed<TableColumn[]>(() => {
   const types = new Set(store.trades.map(t => t.premium_type).filter(Boolean) as string[])
   const premiumRateLabel =
@@ -275,9 +340,26 @@ const spotColumns = computed<TableColumn[]>(() => [
   { key: 'counterparty_name', label: '对手方', width: '120px' },
 ])
 
+// --- Swap trade columns ---
+const swapColumns = computed<TableColumn[]>(() => [
+  { key: 'actions', label: '操作', width: '100px' },
+  { key: 'trade_id', label: '成交编号', sortable: true, width: '140px' },
+  { key: 'ccy_pair', label: '货币对', sortable: true, width: '90px' },
+  { key: 'direction', label: '方向', sortable: true, width: '90px' },
+  { key: 'tenor', label: '期限', sortable: true, width: '70px' },
+  { key: 'near_deal_price', label: '近端成交价', sortable: true, width: '100px', align: 'right' as const },
+  { key: 'far_deal_price', label: '远端成交价', sortable: true, width: '100px', align: 'right' as const },
+  { key: 'near_ccy1_amount', label: '近端本金(万)', sortable: true, width: '120px', align: 'right' as const },
+  { key: 'near_value_date', label: '近端起息日', sortable: true, width: '100px' },
+  { key: 'far_value_date', label: '远端起息日', sortable: true, width: '100px' },
+  { key: 'trade_date', label: '交易日', sortable: true, width: '100px' },
+  { key: 'counterparty_name', label: '对手方', width: '120px' },
+])
+
 onMounted(() => {
   store.loadTrades()
   spotStore.loadTrades()
+  swapStore.loadTrades()
   loadColumnMapping()
 })
 
@@ -289,6 +371,11 @@ watch(search, (val) => {
 watch(spotSearch, (val) => {
   spotStore.setFilters({ search: val })
   spotSelectedIds.value = []
+})
+
+watch(swapSearch, (val) => {
+  swapStore.setFilters({ search: val })
+  swapSelectedIds.value = []
 })
 
 function onSort(col: string) {
@@ -310,6 +397,15 @@ function onSpotRowClick(row: Record<string, unknown>) {
   // Spot trades have no detail page; click does nothing for now
 }
 
+function onSwapSort(col: string) {
+  const order = swapStore.filters.sort_by === col && swapStore.filters.sort_order === 'asc' ? 'desc' : 'asc'
+  swapStore.setFilters({ sort_by: col, sort_order: order })
+}
+
+function onSwapRowClick(row: Record<string, unknown>) {
+  // Swap trades have no detail page; click does nothing for now
+}
+
 // --- Import ---
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement
@@ -322,14 +418,21 @@ async function handleUpload() {
   if (!importFile.value) return
   importLoading.value = true
   try {
-    const result = importType.value === 'spot'
-      ? await uploadSpotFile(importFile.value)
-      : await uploadFile(importFile.value)
+    let result: ImportConfirmResponse
+    if (importType.value === 'spot') {
+      result = await uploadSpotFile(importFile.value)
+    } else if (importType.value === 'swap') {
+      result = await uploadSwapFile(importFile.value)
+    } else {
+      result = await uploadFile(importFile.value)
+    }
     importResult.value = result
     const msg = `导入完成: ${result.imported_rows} 行成功, ${result.skipped_rows} 跳过, ${result.error_rows} 错误`
     ui.addNotification(result.status === 'success' ? 'success' : 'warning', msg)
     if (importType.value === 'spot') {
       spotStore.loadTrades()
+    } else if (importType.value === 'swap') {
+      swapStore.loadTrades()
     } else {
       store.loadTrades()
     }
@@ -348,6 +451,10 @@ async function loadColumnMapping() {
   try {
     const result = await getSpotColumnMappingApi()
     spotColumnMapping.value = result.mapping
+  } catch { /* ignore */ }
+  try {
+    const result = await getSwapColumnMappingApi()
+    swapColumnMapping.value = result.mapping
   } catch { /* ignore */ }
 }
 
@@ -479,9 +586,92 @@ async function deleteSpotTrade(trade: SpotTrade) {
   }
 }
 
+// --- Swap trade CRUD ---
+function openSwapCreateModal() {
+  swapModalMode.value = 'create'
+  swapForm.value = { ...emptySwapForm }
+  swapEditingId.value = null
+  swapFormPortfolioId.value = null
+  swapFormError.value = null
+  showSwapModal.value = true
+}
+
+function openSwapEditModal(trade: SwapTrade) {
+  swapModalMode.value = 'edit'
+  swapEditingId.value = trade.id
+  swapFormPortfolioId.value = trade.portfolio_id
+  swapForm.value = {
+    trade_id: trade.trade_id,
+    ccy_pair: trade.ccy_pair,
+    direction: trade.direction,
+    swap_type: trade.swap_type,
+    event_type: trade.event_type,
+    tenor: trade.tenor,
+    spread: trade.spread,
+    spot_value_date: trade.spot_value_date,
+    spot_rate: trade.spot_rate,
+    near_value_date: trade.near_value_date,
+    near_tenor: trade.near_tenor,
+    near_swap_points: trade.near_swap_points,
+    near_deal_price: trade.near_deal_price,
+    near_trade_ccy: trade.near_trade_ccy,
+    near_ccy1_amount: trade.near_ccy1_amount,
+    near_ccy2_amount: trade.near_ccy2_amount,
+    near_settlement_status: trade.near_settlement_status,
+    far_value_date: trade.far_value_date,
+    far_tenor: trade.far_tenor,
+    far_swap_points: trade.far_swap_points,
+    far_deal_price: trade.far_deal_price,
+    far_trade_ccy: trade.far_trade_ccy,
+    far_ccy1_amount: trade.far_ccy1_amount,
+    far_ccy2_amount: trade.far_ccy2_amount,
+    far_settlement_status: trade.far_settlement_status,
+    trade_date: trade.trade_date,
+    counterparty_name: trade.counterparty_name,
+    portfolio_name: trade.portfolio_name,
+    our_trader: trade.our_trader,
+    venue: trade.venue,
+    source: trade.source,
+    comments: trade.comments,
+  }
+  swapFormError.value = null
+  showSwapModal.value = true
+}
+
+async function submitSwapForm() {
+  swapFormLoading.value = true
+  swapFormError.value = null
+  const payload = { ...swapForm.value, portfolio_id: swapFormPortfolioId.value }
+  try {
+    if (swapModalMode.value === 'create') {
+      await swapStore.addTrade(payload as SwapTradeCreate)
+      ui.addNotification('success', '掉期交易创建成功')
+    } else if (swapEditingId.value) {
+      await swapStore.saveTrade(swapEditingId.value, payload as SwapTradeUpdate)
+      ui.addNotification('success', '掉期交易更新成功')
+    }
+    showSwapModal.value = false
+    swapStore.loadTrades()
+  } catch (e: unknown) {
+    swapFormError.value = e instanceof Error ? e.message : '操作失败'
+  } finally {
+    swapFormLoading.value = false
+  }
+}
+
+async function deleteSwapTrade(trade: SwapTrade) {
+  try {
+    await swapStore.removeTrade(trade.id)
+    ui.addNotification('success', '掉期交易已删除')
+  } catch (e: unknown) {
+    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+  }
+}
+
 // --- Modal overlay click guard (prevents closing on drag from inside) ---
 const { onOverlayMousedown, onOverlayClick } = useModalGuard(showModal)
 const { onOverlayMousedown: onSpotOverlayMousedown, onOverlayClick: onSpotOverlayClick } = useModalGuard(showSpotModal)
+const { onOverlayMousedown: onSwapOverlayMousedown, onOverlayClick: onSwapOverlayClick } = useModalGuard(showSwapModal)
 
 // Pagination
 const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size || 50))
@@ -674,6 +864,96 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
+
+      <!-- Swap trades section -->
+      <div class="section-divider">
+        <h2 class="section-title">掉期交易</h2>
+      </div>
+
+      <div class="toolbar">
+        <SearchInput v-model="swapSearch" placeholder="搜索成交编号、货币对、对手方..." />
+        <div class="filter-group">
+          <select v-model="swapStore.filters.ccy_pair" @change="swapStore.setFilters({ ccy_pair: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">全部货币对</option>
+            <option value="USD/CNY">USD/CNY</option>
+            <option value="EUR/USD">EUR/USD</option>
+            <option value="EUR/CNY">EUR/CNY</option>
+            <option value="GBP/USD">GBP/USD</option>
+            <option value="USD/JPY">USD/JPY</option>
+            <option value="USD/HKD">USD/HKD</option>
+          </select>
+          <select v-model="swapStore.filters.direction" @change="swapStore.setFilters({ direction: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">全部方向</option>
+            <option value="Buy/Sell">Buy/Sell</option>
+            <option value="Sell/Buy">Sell/Buy</option>
+          </select>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button v-if="swapSelectedIds.length > 0" class="btn-danger" @click="confirmSwapBatchDelete">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          删除选中 ({{ swapSelectedIds.length }})
+        </button>
+        <button class="btn-primary" @click="openSwapCreateModal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建掉期
+        </button>
+      </div>
+
+      <DataTable
+        :columns="swapColumns"
+        :rows="swapStore.trades as unknown as Record<string, unknown>[]"
+        :loading="swapStore.loading"
+        :sort-by="swapStore.filters.sort_by"
+        :sort-order="swapStore.filters.sort_order"
+        selectable
+        :selected-ids="swapSelectedIds"
+        row-key="id"
+        @sort="onSwapSort"
+        @row-click="onSwapRowClick"
+        @update:selected-ids="onSwapSelectionChange"
+      >
+        <template #cell-near_deal_price="{ row }">
+          <NumberDisplay :value="row.near_deal_price as number" :decimals="4" />
+        </template>
+        <template #cell-far_deal_price="{ row }">
+          <NumberDisplay :value="row.far_deal_price as number" :decimals="4" />
+        </template>
+        <template #cell-near_ccy1_amount="{ row }">
+          <NumberDisplay :value="toWan(row.near_ccy1_amount as number)" />
+        </template>
+        <template #cell-near_value_date="{ row }">
+          {{ formatDate(row.near_value_date as string) }}
+        </template>
+        <template #cell-far_value_date="{ row }">
+          {{ formatDate(row.far_value_date as string) }}
+        </template>
+        <template #cell-trade_date="{ row }">
+          {{ formatDate(row.trade_date as string) }}
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="action-btns" @click.stop>
+            <button class="action-btn action-edit" title="编辑" @click="openSwapEditModal(row as unknown as SwapTrade)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="action-btn action-delete" title="删除" @click="deleteSwapTrade(row as unknown as SwapTrade)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+          </div>
+        </template>
+      </DataTable>
+
+      <!-- Swap pagination -->
+      <div class="pagination" v-if="swapStore.totalCount > 0">
+        <button class="page-btn" :disabled="swapStore.filters.page === 1" @click="swapStore.setPage((swapStore.filters.page || 1) - 1)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          上一页
+        </button>
+        <span class="page-info">第 <strong>{{ swapStore.filters.page }}</strong> / {{ Math.ceil(swapStore.totalCount / (swapStore.filters.page_size || 50)) }} 页 <span class="page-total">(共 {{ swapStore.totalCount }} 条)</span></span>
+        <button class="page-btn" :disabled="(swapStore.filters.page || 1) >= Math.ceil(swapStore.totalCount / (swapStore.filters.page_size || 50))" @click="swapStore.setPage((swapStore.filters.page || 1) + 1)">
+          下一页
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
     </template>
 
     <!-- ==================== Tab: Import ==================== -->
@@ -687,10 +967,18 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
           <input type="radio" v-model="importType" value="spot" />
           <span>即期 from ComStar</span>
         </label>
+        <label class="radio-label">
+          <input type="radio" v-model="importType" value="swap" />
+          <span>掉期 from ComStar</span>
+        </label>
       </div>
       <div class="card upload-area">
         <h3>选择文件</h3>
-        <p class="card-subtitle">{{ importType === 'spot' ? '导入 COMSTAR 外汇即期 Excel 交易流水文件' : '导入 COMSTAR 外汇期权 Excel/CSV 交易流水文件' }}</p>
+        <p class="card-subtitle">
+          <template v-if="importType === 'spot'">导入 COMSTAR 外汇即期 Excel 交易流水文件</template>
+          <template v-else-if="importType === 'swap'">导入 COMSTAR 外汇掉期 Excel 交易流水文件</template>
+          <template v-else>导入 COMSTAR 外汇期权 Excel/CSV 交易流水文件</template>
+        </p>
         <div class="file-input-row">
           <div class="file-input-wrapper">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
@@ -757,6 +1045,19 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
         <p class="card-subtitle">即期 Excel 表头 → 数据库字段</p>
         <div class="mapping-grid">
           <div v-for="(field, header) in spotColumnMapping" :key="header" class="mapping-item">
+            <span class="csv-header">{{ header }}</span>
+            <span class="arrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+            <span class="db-field">{{ field }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" v-if="Object.keys(swapColumnMapping).length">
+        <h3>掉期字段映射参考</h3>
+        <p class="card-subtitle">掉期 Excel 表头 → 数据库字段</p>
+        <div class="mapping-grid">
+          <div v-for="(field, header) in swapColumnMapping" :key="header" class="mapping-item">
             <span class="csv-header">{{ header }}</span>
             <span class="arrow">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -1015,6 +1316,131 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
           <div class="modal-footer">
             <button class="btn-secondary" @click="cancelSpotBatchDelete">取消</button>
             <button class="btn-danger" @click="doSpotBatchDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ==================== Swap Trade Form Modal ==================== -->
+    <Teleport to="body">
+      <div v-if="showSwapModal" class="modal-overlay" @mousedown="onSwapOverlayMousedown" @click="onSwapOverlayClick">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>{{ swapModalMode === 'create' ? '新建掉期交易' : '编辑掉期交易' }}</h3>
+            <button class="modal-close" @click="showSwapModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="swapFormError" class="form-error">{{ swapFormError }}</div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label>成交编号 <span class="required">*</span></label>
+                <input v-model="swapForm.trade_id" :disabled="swapModalMode === 'edit'" placeholder="必填" />
+              </div>
+              <div class="form-field">
+                <label>货币对</label>
+                <select v-model="swapForm.ccy_pair">
+                  <option value="USD/CNY">USD/CNY</option>
+                  <option value="EUR/USD">EUR/USD</option>
+                  <option value="EUR/CNY">EUR/CNY</option>
+                  <option value="GBP/USD">GBP/USD</option>
+                  <option value="USD/JPY">USD/JPY</option>
+                  <option value="USD/HKD">USD/HKD</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>方向</label>
+                <select v-model="swapForm.direction">
+                  <option value="Buy/Sell">Buy/Sell</option>
+                  <option value="Sell/Buy">Sell/Buy</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>期限</label>
+                <input v-model="swapForm.tenor" placeholder="如 T/N、1W、1M" />
+              </div>
+              <div class="form-field">
+                <label>价差</label>
+                <input v-model.number="swapForm.spread" type="number" step="0.0001" placeholder="掉期点" />
+              </div>
+              <div class="form-field">
+                <label>近端成交价</label>
+                <input v-model.number="swapForm.near_deal_price" type="number" step="0.0001" placeholder="如 161.6531" />
+              </div>
+              <div class="form-field">
+                <label>远端成交价</label>
+                <input v-model.number="swapForm.far_deal_price" type="number" step="0.0001" placeholder="如 161.64" />
+              </div>
+              <div class="form-field">
+                <label>近端本金</label>
+                <input v-model.number="swapForm.near_ccy1_amount" type="number" step="1" placeholder="如 10000000" />
+              </div>
+              <div class="form-field">
+                <label>远端本金</label>
+                <input v-model.number="swapForm.far_ccy1_amount" type="number" step="1" placeholder="如 -10000000" />
+              </div>
+              <div class="form-field">
+                <label>近端起息日</label>
+                <input v-model="swapForm.near_value_date" type="date" />
+              </div>
+              <div class="form-field">
+                <label>远端起息日</label>
+                <input v-model="swapForm.far_value_date" type="date" />
+              </div>
+              <div class="form-field">
+                <label>交易日</label>
+                <input v-model="swapForm.trade_date" type="date" />
+              </div>
+              <div class="form-field">
+                <label>对手方</label>
+                <input v-model="swapForm.counterparty_name" placeholder="对手方名称" />
+              </div>
+              <div class="form-field">
+                <label>投组</label>
+                <PortfolioAutocomplete
+                  :model-value="swapForm.portfolio_name ?? ''"
+                  placeholder="搜索并选择投组..."
+                  @update:model-value="(v: string | null) => swapForm.portfolio_name = v"
+                  @update:portfolio-id="(v: number | null) => swapFormPortfolioId = v"
+                />
+              </div>
+              <div class="form-field">
+                <label>来源</label>
+                <input v-model="swapForm.source" placeholder="如 CSTP下载交易" />
+              </div>
+              <div class="form-field">
+                <label>交易场所</label>
+                <input v-model="swapForm.venue" placeholder="如 CFETS" />
+              </div>
+              <div class="form-field form-field--full">
+                <label>备注</label>
+                <input v-model="swapForm.comments" placeholder="备注" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="showSwapModal = false">取消</button>
+            <button class="btn-primary" :disabled="swapFormLoading" @click="submitSwapForm">
+              {{ swapFormLoading ? '提交中...' : '确认' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ==================== Swap Batch Delete Confirmation ==================== -->
+    <Teleport to="body">
+      <div v-if="showSwapBatchDeleteConfirm" class="modal-overlay" @click.self="cancelSwapBatchDelete">
+        <div class="modal modal-sm">
+          <div class="modal-header">
+            <h3>确认批量删除</h3>
+            <button class="modal-close" @click="cancelSwapBatchDelete">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>确定要删除选中的 <strong>{{ swapSelectedIds.length }}</strong> 条掉期交易吗？此操作不可撤销。</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="cancelSwapBatchDelete">取消</button>
+            <button class="btn-danger" @click="doSwapBatchDelete">删除</button>
           </div>
         </div>
       </div>

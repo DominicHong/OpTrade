@@ -145,6 +145,7 @@ export interface AggregatedSummary {
   // (2) Portfolio-level P&L (all CNY)
   total_option_pnl_cny: number
   total_spot_pnl_cny: number
+  total_swap_pnl_cny: number
   total_pnl_cny: number
   // (3) Spot currency exposures (raw)
   currency_exposures: Record<string, number>
@@ -196,11 +197,31 @@ export interface SpotTradeAnalysisDetail {
   error: string | null
 }
 
+export interface SwapTradeAnalysisDetail {
+  trade_id: number
+  trade_id_str: string | null
+  ccy_pair: string | null
+  direction: string | null
+  near_deal_price: number | null
+  far_deal_price: number | null
+  near_value_date: string | null
+  far_value_date: string | null
+  notional: number | null
+  trade_date: string | null
+  status: string | null         // 未起息 / 存续 / 到期
+  pnl: number | null            // original currency (ccy2)
+  pnl_cny: number | null
+  return_rate: number | null    // annualised percent, 2 decimals
+  fx_rate_to_cny: number | null
+  error: string | null
+}
+
 export interface AggregatedAnalysisResponse {
   portfolio_name: string
   portfolio_count: number
   option_trade_count: number
   spot_trade_count: number
+  swap_trade_count: number
   start_date: string | null
   valuation_date: string | null
   curve_type: string | null
@@ -208,4 +229,5 @@ export interface AggregatedAnalysisResponse {
   summary: AggregatedSummary
   option_trades: OptionTradeAnalysisDetail[]
   spot_trades: SpotTradeAnalysisDetail[]
+  swap_trades: SwapTradeAnalysisDetail[]
 }

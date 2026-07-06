@@ -52,6 +52,7 @@ export interface ImportConfirmResponse {
 export interface DashboardSummary {
   option_trade_count: number
   spot_trade_count: number
+  swap_trade_count: number
   total_portfolios: number
   total_counterparties: number
 }

@@ -41,6 +41,15 @@ onMounted(async () => {
           <span class="stat-label">即期交易笔数</span>
         </div>
       </div>
+      <div class="stat-card stat-card--amber">
+        <div class="stat-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+        </div>
+        <div class="stat-content">
+          <span class="stat-value">{{ store.summary?.swap_trade_count ?? '—' }}</span>
+          <span class="stat-label">掉期交易笔数</span>
+        </div>
+      </div>
       <div class="stat-card stat-card--teal">
         <div class="stat-icon">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
@@ -137,7 +146,7 @@ onMounted(async () => {
 /* ---- Stats Cards ---- */
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -168,6 +177,7 @@ onMounted(async () => {
 }
 .stat-card--primary::before { background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light)); }
 .stat-card--blue::before { background: linear-gradient(90deg, #2563eb, #60a5fa); }
+.stat-card--amber::before { background: linear-gradient(90deg, #d97706, #fbbf24); }
 .stat-card--teal::before { background: linear-gradient(90deg, #0d9488, #5eead4); }
 .stat-card--indigo::before { background: linear-gradient(90deg, #6366f1, #a5b4fc); }
 
@@ -182,6 +192,7 @@ onMounted(async () => {
 }
 .stat-card--primary .stat-icon { background: var(--color-primary-bg); color: var(--color-primary); }
 .stat-card--blue .stat-icon { background: #eff6ff; color: #2563eb; }
+.stat-card--amber .stat-icon { background: #fffbeb; color: #d97706; }
 .stat-card--teal .stat-icon { background: #f0fdfa; color: #0d9488; }
 .stat-card--indigo .stat-icon { background: #eef2ff; color: #6366f1; }
 

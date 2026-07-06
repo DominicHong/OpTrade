@@ -4,6 +4,7 @@ import { toWan } from '@/utils/format'
 const props = defineProps<{
   totalOptionPnlCny: number
   totalSpotPnlCny: number
+  totalSwapPnlCny: number
   totalPnlCny: number
 }>()
 
@@ -37,8 +38,14 @@ function profitColor(val: number | null | undefined): string {
         {{ fmt(toWan(props.totalSpotPnlCny)) }}
       </span>
     </div>
+    <div class="greek-card greek-swap-pnl">
+      <span class="greek-label">掉期总损益 (CNY, 万)</span>
+      <span class="greek-value" :class="profitColor(props.totalSwapPnlCny)">
+        {{ fmt(toWan(props.totalSwapPnlCny)) }}
+      </span>
+    </div>
     <div class="greek-card greek-total-pnl">
-      <span class="greek-label">总损益 (CNY, 万) = 期权 + 即期</span>
+      <span class="greek-label">总损益 (CNY, 万) = 期权 + 即期 + 掉期</span>
       <span class="greek-value" :class="profitColor(props.totalPnlCny)">
         {{ fmt(toWan(props.totalPnlCny)) }}
       </span>

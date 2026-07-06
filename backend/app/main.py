@@ -76,7 +76,7 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
-    from app.routers import option_trades, portfolios, counterparties, calculations, scenarios, imports, dashboard, curves, spot_trades, exchange_rates
+    from app.routers import option_trades, portfolios, counterparties, calculations, scenarios, imports, dashboard, curves, spot_trades, swap_trades, exchange_rates
 
     app.include_router(option_trades.router)
     app.include_router(portfolios.router)
@@ -88,6 +88,8 @@ def create_app() -> FastAPI:
     app.include_router(curves.router)
     app.include_router(spot_trades.router)
     app.include_router(spot_trades.import_router)
+    app.include_router(swap_trades.router)
+    app.include_router(swap_trades.import_router)
     app.include_router(exchange_rates.router)
 
     @app.get("/api/health")

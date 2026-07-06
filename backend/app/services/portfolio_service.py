@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Portfolio, OptionTrade, SpotTrade
+from app.models import Portfolio, OptionTrade, SpotTrade, SwapTrade
 from app.schemas.portfolio import (
     PortfolioCreate,
     PortfolioGreeksRequest,
@@ -122,7 +122,10 @@ class PortfolioService:
         spot_count = session.exec(
             select(func.count(SpotTrade.id)).where(SpotTrade.portfolio_id == portfolio_id)
         ).one()
-        return opt_count + spot_count
+        swap_count = session.exec(
+            select(func.count(SwapTrade.id)).where(SwapTrade.portfolio_id == portfolio_id)
+        ).one()
+        return opt_count + spot_count + swap_count
 
     def _to_read(self, session: Session, portfolio: Portfolio) -> PortfolioRead:
         return PortfolioRead(
@@ -556,7 +559,7 @@ class PortfolioService:
     def _find_earliest_trade_date(
         self, session: Session, portfolio_ids: list[int],
     ) -> date | None:
-        """Return the earliest trade_date across option & spot trades in given portfolios."""
+        """Return the earliest trade_date across option, spot & swap trades in given portfolios."""
 
         min_option = session.exec(
             select(func.min(OptionTrade.trade_date)).where(
@@ -568,8 +571,13 @@ class PortfolioService:
                 SpotTrade.portfolio_id.in_(portfolio_ids),
             )
         ).one()
+        min_swap = session.exec(
+            select(func.min(SwapTrade.trade_date)).where(
+                SwapTrade.portfolio_id.in_(portfolio_ids),
+            )
+        ).one()
 
-        candidates: list[date] = [d for d in (min_option, min_spot) if d is not None]
+        candidates: list[date] = [d for d in (min_option, min_spot, min_swap) if d is not None]
         return min(candidates) if candidates else None
 
     def _empty_aggregated_response(
@@ -592,6 +600,7 @@ class PortfolioService:
             portfolio_count=len(request.portfolio_ids),
             option_trade_count=0,
             spot_trade_count=0,
+            swap_trade_count=0,
             start_date=request.start_date,
             valuation_date=valuation_date,
             curve_type=request.curve_type,
@@ -600,11 +609,13 @@ class PortfolioService:
                 option_metrics_by_ccy_pair=[],
                 total_option_pnl_cny=0.0,
                 total_spot_pnl_cny=0.0,
+                total_swap_pnl_cny=0.0,
                 total_pnl_cny=0.0,
                 currency_exposures={c: 0.0 for c in TARGET_CURRENCIES},
             ),
             option_trades=[],
             spot_trades=[],
+            swap_trades=[],
         )
 
     def _resolve_spot_params(
@@ -727,6 +738,113 @@ class PortfolioService:
 
         return detail
 
+    def _process_swap_trade(
+        self,
+        trade,
+        valuation_date: date,
+    ) -> "SwapTradeAnalysisDetail":
+        """Process a single swap trade for P&L calculation.
+
+        P&L (in ccy2, the quote currency) is the price difference between
+        the far and near leg multiplied by the near-leg ccy1 notional:
+
+            buy  ccy1/ccy2 (Buy/Sell):  PnL = (far - near) * |notional|
+            sell ccy1/ccy2 (Sell/Buy):  PnL = (near - far) * |notional|
+
+        Accrual rule:
+            - valuation_date <  near_value_date  → PnL = 0  (未起息)
+            - near_value_date ≤ valuation_date < far_value_date → PnL = full × elapsed/total (存续)
+            - valuation_date ≥ far_value_date     → PnL = full (到期)
+
+        Return rate (annualised, percent, 2 decimals):
+            buy : (far - near) / near × 365 / total_days × 100
+            sell: (near - far) / near × 365 / total_days × 100
+        """
+        from app.schemas.portfolio import SwapTradeAnalysisDetail
+
+        direction = (trade.direction or "").strip()
+        # Buy/Sell  → buy ccy1/ccy2 (near buy, far sell)
+        # Sell/Buy  → sell ccy1/ccy2 (near sell, far buy)
+        is_buy = direction.lower().startswith("buy")
+
+        detail = SwapTradeAnalysisDetail(
+            trade_id=trade.id,
+            trade_id_str=trade.trade_id,
+            ccy_pair=trade.ccy_pair,
+            direction=trade.direction,
+            near_deal_price=trade.near_deal_price,
+            far_deal_price=trade.far_deal_price,
+            near_value_date=trade.near_value_date,
+            far_value_date=trade.far_value_date,
+            notional=trade.near_ccy1_amount,
+            trade_date=trade.trade_date,
+        )
+
+        if not trade.ccy_pair:
+            detail.error = "Missing currency pair"
+            return detail
+
+        if (
+            trade.near_deal_price is None
+            or trade.far_deal_price is None
+            or trade.near_value_date is None
+            or trade.far_value_date is None
+            or trade.near_ccy1_amount is None
+        ):
+            detail.error = "Missing data for P&L calculation (near/far price, value dates, or notional)"
+            return detail
+
+        near_price = float(trade.near_deal_price)
+        far_price = float(trade.far_deal_price)
+        notional = abs(float(trade.near_ccy1_amount))
+        near_vd = trade.near_value_date
+        far_vd = trade.far_value_date
+
+        total_days = (far_vd - near_vd).days
+        # Guard against non-positive horizons (malformed data / same-day legs)
+        if total_days <= 0:
+            total_days = 0
+
+        # Full (maturity) PnL in ccy2
+        if is_buy:
+            full_pnl = (far_price - near_price) * notional
+            price_diff = far_price - near_price
+        else:
+            full_pnl = (near_price - far_price) * notional
+            price_diff = near_price - far_price
+
+        # Status + accrual
+        if valuation_date < near_vd:
+            status = "未起息"
+            pnl = 0.0
+        elif valuation_date >= far_vd:
+            status = "到期"
+            pnl = full_pnl
+        else:
+            status = "存续"
+            if total_days > 0:
+                elapsed = (valuation_date - near_vd).days
+                # Clamp elapsed into [0, total_days] for safety
+                if elapsed < 0:
+                    elapsed = 0
+                elif elapsed > total_days:
+                    elapsed = total_days
+                pnl = full_pnl * elapsed / total_days
+            else:
+                pnl = full_pnl
+
+        detail.status = status
+        # normalise -0.0 → 0.0 to avoid "-0.00" display
+        pnl = 0.0 if pnl == 0 else pnl
+        detail.pnl = round(pnl, 2)
+
+        # Return rate (annualised percent, 2 decimals)
+        if total_days > 0 and near_price != 0:
+            return_rate = (price_diff / near_price) * 365.0 / total_days * 100.0
+            detail.return_rate = round(return_rate, 2)
+
+        return detail
+
     def calculate_aggregated_analysis(
         self,
         session: Session,
@@ -745,6 +863,7 @@ class PortfolioService:
             AggregatedSummary,
             OptionTradeAnalysisDetail,
             SpotTradeAnalysisDetail,
+            SwapTradeAnalysisDetail,
         )
 
         # --- 1. Resolve start_date ---
@@ -782,6 +901,15 @@ class PortfolioService:
         spot_by_trade_id: dict[str, SpotTrade] = {
             s.trade_id: s for s in spot_trades
         }
+
+        # --- 3b. Query swap trades in date range ---
+        swap_trades = session.exec(
+            select(SwapTrade).where(
+                SwapTrade.portfolio_id.in_(request.portfolio_ids),
+                SwapTrade.trade_date >= start_date,
+                SwapTrade.trade_date <= valuation_date,
+            )
+        ).all()
 
         # --- 4. Build override lookup ---
         override_map: dict[int, OptionTradeParamsOverride] = {}
@@ -1023,6 +1151,24 @@ class PortfolioService:
 
             spot_details.append(detail)
 
+        # --- 6b. Process swap trades ---
+        swap_details: list[SwapTradeAnalysisDetail] = []
+        total_swap_pnl_cny = 0.0
+
+        for trade in swap_trades:
+            detail = self._process_swap_trade(trade, valuation_date)
+
+            # CNY conversion for swap P&L (pnl is in ccy2)
+            _, swap_quote_ccy = _split_ccy_pair(trade.ccy_pair)
+            if swap_quote_ccy and detail.pnl is not None and detail.error is None:
+                swap_fx = _get_fx_to_cny(swap_quote_ccy)
+                detail.fx_rate_to_cny = swap_fx
+                if swap_fx is not None:
+                    detail.pnl_cny = round(detail.pnl * swap_fx, 2)
+                    total_swap_pnl_cny += detail.pnl_cny
+
+            swap_details.append(detail)
+
         # --- Currency exposure (spot trades only) ---
         TARGET_CURRENCIES = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
         currency_exposures: dict[str, float] = {c: 0.0 for c in TARGET_CURRENCIES}
@@ -1064,7 +1210,7 @@ class PortfolioService:
         # Sort by ccy_pair for stable display
         option_metrics_list.sort(key=lambda m: m.ccy_pair)
 
-        total_pnl_cny = round(total_option_pnl_cny + total_spot_pnl_cny, 2)
+        total_pnl_cny = round(total_option_pnl_cny + total_spot_pnl_cny + total_swap_pnl_cny, 2)
 
         # --- 8. Determine portfolio_name ---
         all_names = session.exec(
@@ -1078,6 +1224,7 @@ class PortfolioService:
             option_metrics_by_ccy_pair=option_metrics_list,
             total_option_pnl_cny=round(total_option_pnl_cny, 2),
             total_spot_pnl_cny=round(total_spot_pnl_cny, 2),
+            total_swap_pnl_cny=round(total_swap_pnl_cny, 2),
             total_pnl_cny=total_pnl_cny,
             currency_exposures=currency_exposures,
         )
@@ -1087,6 +1234,7 @@ class PortfolioService:
             portfolio_count=len(request.portfolio_ids),
             option_trade_count=len(option_trades),
             spot_trade_count=len(spot_trades),
+            swap_trade_count=len(swap_trades),
             start_date=start_date,
             valuation_date=valuation_date,
             curve_type=request.curve_type,
@@ -1094,6 +1242,7 @@ class PortfolioService:
             summary=summary,
             option_trades=option_details,
             spot_trades=spot_details,
+            swap_trades=swap_details,
         )
 
 

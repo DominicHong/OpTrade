@@ -26,9 +26,10 @@ class Portfolio(SQLModel, table=True):
     name: str = Field(max_length=200, index=True, unique=True)
     description: str | None = Field(default=None, max_length=500)
 
-    # One-to-many: Portfolio has many OptionTrades and SpotTrades
+    # One-to-many: Portfolio has many OptionTrades, SpotTrades and SwapTrades
     option_trades: list["OptionTrade"] = Relationship(back_populates="portfolio")
     spot_trades: list["SpotTrade"] = Relationship(back_populates="portfolio")
+    swap_trades: list["SwapTrade"] = Relationship(back_populates="portfolio")
 
 
 class Counterparty(SQLModel, table=True):
@@ -40,6 +41,7 @@ class Counterparty(SQLModel, table=True):
 
     option_trades: list["OptionTrade"] = Relationship(back_populates="counterparty")
     spot_trades: list["SpotTrade"] = Relationship(back_populates="counterparty")
+    swap_trades: list["SwapTrade"] = Relationship(back_populates="counterparty")
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +287,88 @@ class SpotTrade(SQLModel, table=True):
     # Relationships
     portfolio: Portfolio = Relationship(back_populates="spot_trades")
     counterparty: Counterparty = Relationship(back_populates="spot_trades")
+
+
+class SwapTrade(SQLModel, table=True):
+    """FX Swap trade entity mapping COMSTAR FX Swap Excel export.
+
+    A swap has two legs: near (近端) and far (远端). P&L is realised from the
+    price difference between the two legs in the quote currency (ccy2).
+    """
+
+    __tablename__ = "swap_trades"
+
+    id: int | None = Field(default=None, primary_key=True)
+    trade_id: str = Field(max_length=200, index=True)
+
+    # Foreign Keys (reuse Portfolio, Counterparty)
+    portfolio_id: int | None = Field(default=None, foreign_key="portfolios.id", index=True)
+    counterparty_id: int | None = Field(default=None, foreign_key="counterparties.id", index=True)
+
+    # Denormalized names for import convenience
+    portfolio_name: str | None = Field(default=None, max_length=200)
+    counterparty_name: str | None = Field(default=None, max_length=300)
+
+    # Identifiers
+    source_trade_id: str | None = Field(default=None, max_length=200)
+    review_id: str | None = Field(default=None, max_length=200)
+
+    # Trade details
+    ccy_pair: str | None = Field(default=None, max_length=20)
+    direction: str | None = Field(default=None, max_length=20)  # Buy/Sell | Sell/Buy
+    swap_type: str | None = Field(default=None, max_length=50)  # 掉期类型
+    event_type: str | None = Field(default=None, max_length=50)
+    tenor: str | None = Field(default=None, max_length=50)
+    spread: float | None = Field(default=None)  # 价差 (swap points)
+
+    # Derived from ccy_pair on import
+    ccy1: str | None = Field(default=None, max_length=10)
+    ccy2: str | None = Field(default=None, max_length=10)
+
+    # Spot reference (即期起息日 / 即期汇率)
+    spot_value_date: date | None = Field(default=None)
+    spot_rate: float | None = Field(default=None)
+
+    # Near leg (近端)
+    near_value_date: date | None = Field(default=None, index=True)
+    near_tenor: str | None = Field(default=None, max_length=50)
+    near_swap_points: float | None = Field(default=None)
+    near_deal_price: float | None = Field(default=None)
+    near_trade_ccy: str | None = Field(default=None, max_length=10)
+    near_ccy1_amount: float | None = Field(default=None)
+    near_ccy2_amount: float | None = Field(default=None)
+    near_settlement_status: str | None = Field(default=None, max_length=50)
+
+    # Far leg (远端)
+    far_value_date: date | None = Field(default=None, index=True)
+    far_tenor: str | None = Field(default=None, max_length=50)
+    far_swap_points: float | None = Field(default=None)
+    far_deal_price: float | None = Field(default=None)
+    far_trade_ccy: str | None = Field(default=None, max_length=10)
+    far_ccy1_amount: float | None = Field(default=None)
+    far_ccy2_amount: float | None = Field(default=None)
+    far_settlement_status: str | None = Field(default=None, max_length=50)
+
+    # Dates
+    trade_date: date | None = Field(default=None)
+    trade_time: str | None = Field(default=None, max_length=20)
+    natural_date: date | None = Field(default=None)
+
+    # Counterparty & venue (denormalized for import)
+    our_trader: str | None = Field(default=None, max_length=100)
+    venue: str | None = Field(default=None, max_length=50)
+    clearing_org: str | None = Field(default=None, max_length=100)
+    clearing_method: str | None = Field(default=None, max_length=100)
+
+    # Status and meta
+    source: str | None = Field(default=None, max_length=100)
+    comments: str | None = Field(default=None)
+    created_timestamp: datetime | None = Field(default=None)
+
+    # System timestamps
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    portfolio: Portfolio = Relationship(back_populates="swap_trades")
+    counterparty: Counterparty = Relationship(back_populates="swap_trades")

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class DashboardSummary(BaseModel):
     option_trade_count: int = 0
     spot_trade_count: int = 0
+    swap_trade_count: int = 0
     total_portfolios: int = 0
     total_counterparties: int = 0
 

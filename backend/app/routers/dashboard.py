@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import Counterparty, CurveDefinition, Portfolio, OptionTrade, SpotTrade
+from app.models import Counterparty, CurveDefinition, Portfolio, OptionTrade, SpotTrade, SwapTrade
 from app.schemas.dashboard import (
     DashboardAnalysisRequest,
     DashboardDefaultsResponse,
@@ -28,9 +28,10 @@ def get_dashboard_summary(
 
     option_trade_count = session.exec(select(func.count(OptionTrade.id))).one()
     spot_trade_count = session.exec(select(func.count(SpotTrade.id))).one()
+    swap_trade_count = session.exec(select(func.count(SwapTrade.id))).one()
     total_portfolios = session.exec(select(func.count(Portfolio.id))).one()
 
-    # Unique counterparties across both option_trades and spot_trades
+    # Unique counterparties across option, spot and swap trades
     opt_cp_ids = set(
         session.exec(
             select(OptionTrade.counterparty_id).where(
@@ -45,11 +46,19 @@ def get_dashboard_summary(
             )
         ).all()
     )
-    total_counterparties = len(opt_cp_ids | spot_cp_ids)
+    swap_cp_ids = set(
+        session.exec(
+            select(SwapTrade.counterparty_id).where(
+                SwapTrade.counterparty_id.isnot(None)
+            )
+        ).all()
+    )
+    total_counterparties = len(opt_cp_ids | spot_cp_ids | swap_cp_ids)
 
     return DashboardSummary(
         option_trade_count=option_trade_count,
         spot_trade_count=spot_trade_count,
+        swap_trade_count=swap_trade_count,
         total_portfolios=total_portfolios,
         total_counterparties=total_counterparties,
     )
