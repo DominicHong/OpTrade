@@ -22,11 +22,11 @@ class GreeksService:
         self,
         option_type: str,
         direction: str,
-        spot: float,
-        strike: float,
-        volatility: float,
-        rf_rate_base: float = 0.03,
-        rf_rate_quote: float = 0.03,
+        spot: float | None,
+        strike: float | None,
+        volatility: float | None,
+        rf_rate_base: float | None = 0.03,
+        rf_rate_quote: float | None = 0.03,
         valuation_date: date | None = None,
         expiry_date: date | None = None,
         time_to_expiry_years: float | None = None,
@@ -109,6 +109,33 @@ class GreeksService:
                              "time_to_expiry_years must be provided.",
                 }
 
+            # Defensive: refuse to price a live option with missing market
+            # data instead of silently relying on hardcoded defaults. Expired
+            # options already short-circuited to zeros above, so this only
+            # guards options that still need to be valued.
+            missing: list[str] = []
+            if spot is None:
+                missing.append("spot")
+            if strike is None:
+                missing.append("strike")
+            if volatility is None:
+                missing.append("volatility")
+            if rf_rate_base is None:
+                missing.append("rf_rate_base")
+            if rf_rate_quote is None:
+                missing.append("rf_rate_quote")
+            if missing:
+                return {
+                    "npv": None,
+                    "delta": None,
+                    "gamma": None,
+                    "vega": None,
+                    "theta": None,
+                    "rho": None,
+                    "error": "缺少估值参数：" + ", ".join(missing)
+                             + "（曲线未解析且未提供覆盖值）",
+                }
+
             ql.Settings.instance().evaluationDate = eval_d
 
             # Set up the option
@@ -182,14 +209,14 @@ class GreeksService:
 
     def calculate_greeks_for_trade(
         self,
-        spot: float,
-        strike: float,
-        volatility: float,
+        spot: float | None,
+        strike: float | None,
+        volatility: float | None,
         time_to_expiry_years: float,
         option_type: str = "Call",
         direction: str = "Buy",
-        rf_rate_base: float = 0.03,
-        rf_rate_quote: float = 0.03,
+        rf_rate_base: float | None = 0.03,
+        rf_rate_quote: float | None = 0.03,
         valuation_date: date | None = None,
         expiry_date: date | None = None,
     ) -> dict:

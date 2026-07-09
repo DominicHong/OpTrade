@@ -124,7 +124,7 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
       <span v-if="tradeParams.some(t => t.curveResolved)">
         📊 曲线参数已解析。蓝色背景单元格为曲线推导值，可直接修改覆盖。
       </span>
-      <span v-else>⚠️ 未找到曲线数据，参数将使用交易自带值或默认值。</span>
+      <span v-else>⚠️ 未找到曲线数据，请手动填写各交易的估值参数后计算。</span>
     </div>
 
     <!-- Per-trade parameter table -->
@@ -163,42 +163,42 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
             <td class="cell-info">{{ tp.strike != null ? tp.strike.toFixed(4) : '—' }}</td>
             <td class="cell-info">{{ tp.expiryDate ?? '—' }}</td>
             <td class="cell-info">{{ displayValue(tp.remainingMaturityYears) }}</td>
-            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
+            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved && tp.rfRateBase != null }">
               <input
                 type="text"
                 inputmode="decimal"
                 :value="editingValues[`${tp.tradeId}-rfRateBase`]"
-                :placeholder="tp.curveResolved ? '曲线推导' : '默认3.0'"
+                :placeholder="tp.curveResolved ? '曲线推导' : '请输入'"
                 @input="onTradeFieldInput(tp.tradeId, 'rfRateBase', $event)"
                 @blur="onTradeFieldBlur(tp.tradeId, 'rfRateBase')"
               />
             </td>
-            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
+            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved && tp.rfRateQuote != null }">
               <input
                 type="text"
                 inputmode="decimal"
                 :value="editingValues[`${tp.tradeId}-rfRateQuote`]"
-                :placeholder="tp.curveResolved ? '曲线推导' : '默认3.0'"
+                :placeholder="tp.curveResolved ? '曲线推导' : '请输入'"
                 @input="onTradeFieldInput(tp.tradeId, 'rfRateQuote', $event)"
                 @blur="onTradeFieldBlur(tp.tradeId, 'rfRateQuote')"
               />
             </td>
-            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
+            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved && tp.volatility != null }">
               <input
                 type="text"
                 inputmode="decimal"
                 :value="editingValues[`${tp.tradeId}-volatility`]"
-                :placeholder="tp.curveResolved ? '曲线推导' : '默认5.0'"
+                :placeholder="tp.curveResolved ? '曲线推导' : '请输入'"
                 @input="onTradeFieldInput(tp.tradeId, 'volatility', $event)"
                 @blur="onTradeFieldBlur(tp.tradeId, 'volatility')"
               />
             </td>
-            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved }">
+            <td class="cell-editable" :class="{ 'cell-from-curve': tp.curveResolved && tp.spot != null }">
               <input
                 type="text"
                 inputmode="decimal"
                 :value="editingValues[`${tp.tradeId}-spot`]"
-                :placeholder="tp.curveResolved ? '曲线推导' : '默认6.8'"
+                :placeholder="tp.curveResolved ? '曲线推导' : '请输入'"
                 @input="onTradeFieldInput(tp.tradeId, 'spot', $event)"
                 @blur="onTradeFieldBlur(tp.tradeId, 'spot')"
               />

@@ -30,6 +30,15 @@ export interface EditableOptionTradeParams {
   volatility: number | null
   curveResolved: boolean
   curveDate: string | null
+  /** Per-field flags: true when the user explicitly typed a value (vs. a
+   * curve-resolved value echoed back from 获取参数). Only edited fields are
+   * sent as overrides so the backend re-resolves the rest from the curve at
+   * each date (important for interval P&L, which must use start-date curve
+   * data rather than valuation-date echoes). */
+  rfRateBaseEdited: boolean
+  rfRateQuoteEdited: boolean
+  spotEdited: boolean
+  volatilityEdited: boolean
 }
 
 export function useGreeksCalculation() {
@@ -60,6 +69,32 @@ export function useGreeksCalculation() {
     tradeParams.value = []
   }
 
+  /**
+   * Validate that every option trade has all four valuation parameters
+   * (rfRateBase, rfRateQuote, spot, volatility) filled in — either from
+   * curve resolution or by the user. Returns an error message string when
+   * validation fails, or null when OK.
+   */
+  function validateTradeParams(): string | null {
+    if (tradeParams.value.length === 0) {
+      return '请先点击「获取参数」获取各交易的估值参数，确认或补齐后再计算。'
+    }
+    const incomplete = tradeParams.value.filter(
+      (tp) =>
+        tp.rfRateBase == null ||
+        tp.rfRateQuote == null ||
+        tp.spot == null ||
+        tp.volatility == null,
+    )
+    if (incomplete.length > 0) {
+      const ids = incomplete
+        .map((tp) => tp.tradeIdStr ?? String(tp.tradeId))
+        .join('、')
+      return `以下期权缺少估值参数（即期汇率/波动率/Base利率/Quote利率），请在参数表中填写后再计算：${ids}`
+    }
+    return null
+  }
+
   /** Call the resolve-params endpoint and populate tradeParams. */
   async function resolveParams(portfolioId: number) {
     resolving.value = true
@@ -88,6 +123,10 @@ export function useGreeksCalculation() {
           volatility: t.volatility != null ? t.volatility * 100 : null,
           curveResolved: t.curve_resolved,
           curveDate: t.curve_date,
+          rfRateBaseEdited: false,
+          rfRateQuoteEdited: false,
+          spotEdited: false,
+          volatilityEdited: false,
         }),
       )
     } catch (e: unknown) {
@@ -98,7 +137,10 @@ export function useGreeksCalculation() {
     }
   }
 
-  /** Update a single field for an option trade (user edit). */
+  /** Update a single field for an option trade (user edit). Marks the field
+   * as user-edited so it is sent as an override (curve-resolved fields that
+   * the user did not touch are NOT sent back, letting the backend resolve
+   * them from the curve at each relevant date). */
   function updateTradeParam(
     tradeId: number,
     field: 'rfRateBase' | 'rfRateQuote' | 'spot' | 'volatility',
@@ -106,7 +148,37 @@ export function useGreeksCalculation() {
   ) {
     const idx = tradeParams.value.findIndex((t) => t.tradeId === tradeId)
     if (idx === -1) return
-    tradeParams.value[idx] = { ...tradeParams.value[idx], [field]: value }
+    const editedKey = `${field}Edited` as keyof Pick<
+      EditableOptionTradeParams,
+      'rfRateBaseEdited' | 'rfRateQuoteEdited' | 'spotEdited' | 'volatilityEdited'
+    >
+    tradeParams.value[idx] = {
+      ...tradeParams.value[idx],
+      [field]: value,
+      [editedKey]: true,
+    }
+  }
+
+  /** Build user-edit overrides from tradeParams. Only fields the user
+   * explicitly edited are sent (with display values converted back to
+   * decimals); unedited curve-resolved fields are left null so the backend
+   * resolves them from the curve at each relevant date. */
+  function buildOverrides(): OptionTradeParamsOverride[] {
+    return tradeParams.value
+      .filter(
+        (tp) =>
+          tp.rfRateBaseEdited ||
+          tp.rfRateQuoteEdited ||
+          tp.spotEdited ||
+          tp.volatilityEdited,
+      )
+      .map((tp) => ({
+        trade_id: tp.tradeId,
+        rf_rate_base: tp.rfRateBaseEdited && tp.rfRateBase != null ? tp.rfRateBase / 100 : null,
+        rf_rate_quote: tp.rfRateQuoteEdited && tp.rfRateQuote != null ? tp.rfRateQuote / 100 : null,
+        spot: tp.spotEdited ? tp.spot : null,
+        volatility: tp.volatilityEdited && tp.volatility != null ? tp.volatility / 100 : null,
+      }))
   }
 
   /** Build the request and call the greeks endpoint. */
@@ -114,24 +186,13 @@ export function useGreeksCalculation() {
     loading.value = true
     error.value = null
     try {
-      const overrides: OptionTradeParamsOverride[] = tradeParams.value
-        .filter((tp) => {
-          // Only include trades where the user has provided at least one explicit value
-          return (
-            tp.rfRateBase != null ||
-            tp.rfRateQuote != null ||
-            tp.spot != null ||
-            tp.volatility != null
-          )
-        })
-        .map((tp) => ({
-          trade_id: tp.tradeId,
-          // Convert display values back to decimals for rates/vol
-          rf_rate_base: tp.rfRateBase != null ? tp.rfRateBase / 100 : null,
-          rf_rate_quote: tp.rfRateQuote != null ? tp.rfRateQuote / 100 : null,
-          spot: tp.spot,
-          volatility: tp.volatility != null ? tp.volatility / 100 : null,
-        }))
+      const validationError = validateTradeParams()
+      if (validationError) {
+        error.value = validationError
+        return
+      }
+
+      const overrides: OptionTradeParamsOverride[] = buildOverrides()
 
       const request: PortfolioGreeksRequest = {
         valuation_date: valuationDate.value,
@@ -154,22 +215,13 @@ export function useGreeksCalculation() {
     loading.value = true
     error.value = null
     try {
-      const overrides: OptionTradeParamsOverride[] = tradeParams.value
-        .filter((tp) => {
-          return (
-            tp.rfRateBase != null ||
-            tp.rfRateQuote != null ||
-            tp.spot != null ||
-            tp.volatility != null
-          )
-        })
-        .map((tp) => ({
-          trade_id: tp.tradeId,
-          rf_rate_base: tp.rfRateBase != null ? tp.rfRateBase / 100 : null,
-          rf_rate_quote: tp.rfRateQuote != null ? tp.rfRateQuote / 100 : null,
-          spot: tp.spot,
-          volatility: tp.volatility != null ? tp.volatility / 100 : null,
-        }))
+      const validationError = validateTradeParams()
+      if (validationError) {
+        error.value = validationError
+        return
+      }
+
+      const overrides: OptionTradeParamsOverride[] = buildOverrides()
 
       const request: AggregatedAnalysisRequest = {
         portfolio_ids: portfolioIds,

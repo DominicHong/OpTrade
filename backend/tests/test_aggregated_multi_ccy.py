@@ -25,6 +25,7 @@ from app.models.exchange_rate import ExchangeRate
 from app.schemas.portfolio import (
     AggregatedAnalysisRequest,
     AggregatedAnalysisResponse,
+    OptionTradeParamsOverride,
 )
 from app.services.portfolio_service import PortfolioService
 from app.services.greeks_service import GreeksService
@@ -312,6 +313,37 @@ def service() -> PortfolioService:
     )
 
 
+def _trade_vol_overrides(
+    session: Session, portfolio_ids: list[int],
+) -> list[OptionTradeParamsOverride]:
+    """Vol overrides for option trades, simulating a user who filled in the
+    vol field in the params table after ``获取参数``.
+
+    Volatility is included for every option that recorded one. This matters
+    for two cases in these tests:
+
+    * Cross pairs (EUR/USD, USD/HKD) — the CNY-implied curve cannot derive
+      cross-pair volatility at all.
+    * CNY-quoted pairs here — the test curve seeds a *constant* spot rate for
+      determinism, so the curve's historical-vol calculation returns None
+      (in production, real spot history would yield a curve vol).
+
+    Using each trade's recorded volatility keeps the NPV/delta values
+    identical to the prior trade-default behaviour, so the aggregation
+    assertions remain valid.
+    """
+    overrides: list[OptionTradeParamsOverride] = []
+    trades = session.exec(
+        select(OptionTrade).where(OptionTrade.portfolio_id.in_(portfolio_ids))
+    ).all()
+    for t in trades:
+        if t.volatility is not None:
+            overrides.append(OptionTradeParamsOverride(
+                trade_id=t.id, volatility=t.volatility,
+            ))
+    return overrides
+
+
 def _aggregate(
     service: PortfolioService,
     session: Session,
@@ -319,8 +351,14 @@ def _aggregate(
     valuation_date: date | None = None,
     start_date: date | None = None,
     curve_type: str | None = "fx_implied_rate",
+    trade_params: list[OptionTradeParamsOverride] | None = None,
 ) -> AggregatedAnalysisResponse:
-    """Helper: invoke calculate_aggregated_analysis with sensible defaults."""
+    """Helper: invoke calculate_aggregated_analysis with sensible defaults.
+
+    By default it injects vol overrides for the portfolios' option trades,
+    mirroring a user who completed the params table. Pass ``trade_params=[]``
+    to disable injection and exercise the missing-params error path.
+    """
     return service.calculate_aggregated_analysis(
         session,
         AggregatedAnalysisRequest(
@@ -328,6 +366,10 @@ def _aggregate(
             start_date=start_date,
             valuation_date=valuation_date or _today(0),
             curve_type=curve_type,
+            trade_params=(
+                trade_params if trade_params is not None
+                else _trade_vol_overrides(session, portfolio_ids)
+            ),
         ),
     )
 
@@ -398,6 +440,22 @@ class TestCnyQuotedOptionPnl:
 
 class TestCrossPairOptionPnl:
     """EUR/USD and USD/HKD options — spot from ExchangeRateService."""
+
+    def test_cross_pair_option_errors_without_vol_override(
+        self, service, session, multi_ccy_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Cross-pair options with no user-supplied vol must error — the
+        CNY-implied curve cannot derive cross-pair volatility, and there are
+        no longer trade/hardcoded defaults to fall back on."""
+        resp = _aggregate(
+            service, session, [multi_ccy_portfolio.id],
+            trade_params=[],  # explicitly no overrides
+        )
+        eur_usd = [t for t in resp.option_trades if t.ccy_pair == "EUR/USD"][0]
+        assert eur_usd.error is not None
+        usd_hkd = [t for t in resp.option_trades if t.ccy_pair == "USD/HKD"][0]
+        assert usd_hkd.error is not None
 
     def test_eur_usd_option_resolves(
         self, service, session, multi_ccy_portfolio,
@@ -948,8 +1006,12 @@ class TestOptionIntervalPnl:
             )
         ).one()
 
+        # Independently compute NPV at start_date, using the same vol
+        # override the production interval path now applies at start_date.
         spot_s, vol_s, rfb_s, rfq_s, _ = service._resolve_params_for_trade(
-            session, trade, start, None, "fx_implied_rate", None,
+            session, trade, start,
+            OptionTradeParamsOverride(trade_id=trade.id, volatility=trade.volatility),
+            "fx_implied_rate", None,
         )
         greeks_start = service.greeks_service.calculate_vanilla_greeks(
             option_type=trade.trade_type,

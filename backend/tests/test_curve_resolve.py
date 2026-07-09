@@ -207,7 +207,7 @@ class TestResolveParamsEndpoint:
     def test_resolve_no_curve_data(
         self, client: TestClient, portfolio_with_trades: Portfolio,
     ):
-        """When no FxImpliedRate data exists, all trades have curve_resolved=false."""
+        """When no FxImpliedRate data exists, params display empty (all None)."""
         pid = portfolio_with_trades.id
         resp = client.post(
             f"/api/v1/portfolios/{pid}/resolve-params",
@@ -218,11 +218,14 @@ class TestResolveParamsEndpoint:
         )
         assert resp.status_code == 200
         trades = resp.json()["trades"]
-        # All should be unresolved (no curve data seeded)
+        # No curve data → every field the curve would populate is empty
         for t in trades:
-            if t["ccy_pair"] and t["ccy_pair"].endswith("/CNY"):
-                # No data → can't resolve even for CNY pairs
-                pass  # curve_resolved depends on whether data exists
+            assert t["rf_rate_base"] is None
+            assert t["rf_rate_quote"] is None
+            assert t["spot"] is None
+            assert t["volatility"] is None
+            assert t["curve_resolved"] is False
+            assert t["curve_date"] is None
 
     def test_resolve_nonexistent_portfolio(self, client: TestClient):
         """404 for non-existent portfolio."""
@@ -234,6 +237,51 @@ class TestResolveParamsEndpoint:
             },
         )
         assert resp.status_code == 404
+
+    def test_resolve_excludes_expired_options(
+        self, client: TestClient, session: Session,
+    ):
+        """Expired options (expiry_date <= valuation_date) must not be returned."""
+        portfolio = Portfolio(name="Expired Test", description="expiry filter")
+        session.add(portfolio)
+        session.flush()
+
+        alive = OptionTrade(
+            trade_id="ALIVE-001",
+            portfolio_id=portfolio.id,
+            ccy_pair="USD/CNY",
+            trade_type="CALL",
+            direction="买入",
+            strike=7.1200,
+            notional1=1_000_000.0,
+            expiry_date=_future_date(90),
+        )
+        expired = OptionTrade(
+            trade_id="EXPIRED-001",
+            portfolio_id=portfolio.id,
+            ccy_pair="USD/CNY",
+            trade_type="PUT",
+            direction="卖出",
+            strike=7.0000,
+            notional1=1_000_000.0,
+            expiry_date=_make_date(30),  # 30 days ago → expired
+        )
+        session.add_all([alive, expired])
+        session.commit()
+        session.refresh(portfolio)
+
+        resp = client.post(
+            f"/api/v1/portfolios/{portfolio.id}/resolve-params",
+            json={
+                "valuation_date": _make_date(0).isoformat(),
+                "curve_type": "fx_implied_rate",
+            },
+        )
+        assert resp.status_code == 200
+        trades = resp.json()["trades"]
+        trade_ids = [t["trade_id_str"] for t in trades]
+        assert "ALIVE-001" in trade_ids
+        assert "EXPIRED-001" not in trade_ids
 
 
 # ============================================================================
@@ -270,10 +318,11 @@ class TestGreeksWithCurve:
             if not t.get("error"):
                 assert t["delta"] is not None or t["error"] is not None
 
-    def test_greeks_without_curve_type_original_behavior(
+    def test_greeks_without_curve_type_errors_on_missing_params(
         self, client: TestClient, portfolio_with_trades: Portfolio,
     ):
-        """Without curve_type, original behavior is preserved."""
+        """Without curve_type or overrides, every live trade errors — no
+        silent trade-default / hardcoded-default fallback."""
         pid = portfolio_with_trades.id
         resp = client.post(
             f"/api/v1/portfolios/{pid}/greeks",
@@ -287,6 +336,9 @@ class TestGreeksWithCurve:
         data = resp.json()
         assert data["curve_type"] is None
         assert data["curve_valuation_date"] is None
+        # No curve + no overrides + no defaults → every live trade errors
+        for t in data["trades"]:
+            assert t["error"] is not None
 
     def test_greeks_with_trade_params_override(
         self, client: TestClient, portfolio_with_trades: Portfolio,

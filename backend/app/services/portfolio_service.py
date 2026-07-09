@@ -62,7 +62,7 @@ def _resolve_premium_in_ccy2(
     premium_amount: float | None,
     premium_currency: str | None,
     ccy_pair: str | None,
-    spot: float,
+    spot: float | None,
 ) -> float | None:
     """Return the premium expressed in ccy2 (the NPV quote currency).
 
@@ -81,9 +81,39 @@ def _resolve_premium_in_ccy2(
             ccy1 = parts[0]
 
     if premium_currency and ccy1 and premium_currency == ccy1:
-        # Premium in base currency → convert to quote currency via spot
+        # Premium in base currency → convert to quote currency via spot.
+        # If spot is unavailable, the conversion is impossible → None.
+        if spot is None:
+            return None
         return premium_amount * spot
     return premium_amount
+
+
+def _missing_valuation_params(
+    spot: float | None,
+    vol: float | None,
+    rf_base: float | None,
+    rf_quote: float | None,
+) -> str | None:
+    """Return an error message listing missing valuation parameters, or None
+    if all four are present. Used to reject live options that cannot be
+    valued because the curve did not resolve a parameter and the user
+    supplied no override."""
+    missing: list[str] = []
+    if spot is None:
+        missing.append("即期汇率")
+    if vol is None:
+        missing.append("波动率")
+    if rf_base is None:
+        missing.append("Base利率")
+    if rf_quote is None:
+        missing.append("Quote利率")
+    if missing:
+        return (
+            "缺少估值参数：" + "、".join(missing)
+            + "（曲线未解析且未提供覆盖值，请在参数表中填写）"
+        )
+    return None
 
 
 class PortfolioService:
@@ -206,12 +236,18 @@ class PortfolioService:
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
+        valuation_date = request.valuation_date
+
+        # Only include options that have not yet expired as of the valuation
+        # date — expired options need no valuation.
         option_trades = session.exec(
-            select(OptionTrade).where(OptionTrade.portfolio_id == portfolio_id)
+            select(OptionTrade).where(
+                OptionTrade.portfolio_id == portfolio_id,
+                OptionTrade.expiry_date > valuation_date,
+            )
         ).all()
 
         resolved_trades: list[OptionTradeParamsResolved] = []
-        valuation_date = request.valuation_date
 
         for trade in option_trades:
             base: OptionTradeParamsResolved = OptionTradeParamsResolved(
@@ -278,24 +314,30 @@ class PortfolioService:
         override: OptionTradeParamsOverride | None,
         curve_type: str | None,
         curve_valuation_date: date | None,
-    ) -> tuple[float, float, float, float, date | None]:
+    ) -> tuple[float | None, float | None, float | None, float | None, date | None]:
         """Resolve (spot, vol, rf_base, rf_quote, curve_date) for a single option trade.
 
         Priority chain per field (highest first):
           1. User override from *override* (if not None)
           2. Curve resolution (if *curve_type* is set and data exists)
-          3. Trade defaults → hardcoded defaults
+          3. None.
+
+        A parameter that cannot be resolved stays ``None``; callers must
+        handle ``None`` (e.g. report a clear error to the user) rather than
+        silently substituting a default value.
 
         For CNY-quoted pairs (USD/CNY, EUR/CNY, etc.), curve resolution uses
         the FX implied rate curve directly.  For cross pairs (EUR/USD, etc.),
         the spot rate is read from ``ExchangeRateService`` and the two risk-
-        free rates are pulled from each leg's CNY-quoted curve.
+        free rates are pulled from each leg's CNY-quoted curve.  Volatility
+        for cross pairs is NOT derivable from the CNY-implied curve and must
+        be supplied by the user via an override.
         """
-        # Start with the hardcoded / trade defaults
-        spot: float = trade.spot_rate or 6.8
-        vol: float = trade.volatility or 0.05
-        rf_base: float = 0.03
-        rf_quote: float = 0.03
+        # A parameter stays None unless the curve (or a user override) provides it.
+        spot: float | None = None
+        vol: float | None = None
+        rf_base: float | None = None
+        rf_quote: float | None = None
         resolved_curve_date: date | None = curve_valuation_date
 
         ccy_pair = (trade.ccy_pair or "").upper()
@@ -434,6 +476,26 @@ class PortfolioService:
             )
             if cd is not None:
                 curve_valuation_date = cd
+
+            # Live options require all four market-data params; an option at
+            # or past expiry returns zero Greeks regardless, so params are not
+            # required for it (its P&L comes from exercise, not valuation).
+            if valuation_date <= trade.expiry_date:
+                missing = _missing_valuation_params(spot, vol, rf_base, rf_quote)
+                if missing:
+                    trade_details.append(
+                        OptionTradeGreeksDetail(
+                            trade_id=trade.id,
+                            trade_id_str=trade.trade_id,
+                            ccy_pair=trade.ccy_pair,
+                            option_type=trade.trade_type,
+                            direction=trade.direction,
+                            strike=trade.strike,
+                            notional1=trade.notional1,
+                            error=missing,
+                        )
+                    )
+                    continue
 
             # Pass explicit dates to greeks_service — avoids TTE roundtrip
             # precision loss and lets the service handle expiry centrally
@@ -1011,6 +1073,16 @@ class PortfolioService:
             if cd is not None:
                 curve_valuation_date = cd
 
+            # Live options require all four market-data params; an option at
+            # or past expiry returns zero Greeks regardless, so params are not
+            # required for it (its P&L comes from exercise, not valuation).
+            if valuation_date <= trade.expiry_date:
+                missing = _missing_valuation_params(spot, vol, rf_base, rf_quote)
+                if missing:
+                    detail.error = missing
+                    option_details.append(detail)
+                    continue
+
             notional = trade.notional1 or 1.0
 
             # Premium (normalised to ccy2 per unit)
@@ -1092,9 +1164,14 @@ class PortfolioService:
                     detail.premium_pnl = 0.0
                     detail.exercise_pnl = 0.0
                 else:
-                    # Option alive at start_date — compute NPV(start_date)
+                    # Option alive at start_date — compute NPV(start_date).
+                    # Pass the user override so user-supplied params (e.g.
+                    # cross-pair volatility, which the curve cannot derive)
+                    # also apply at start_date; curve-resolvable fields are
+                    # still taken from the start_date curve when the override
+                    # leaves them None.
                     spot_s, vol_s, rfb_s, rfq_s, _ = self._resolve_params_for_trade(
-                        session, trade, start_date, None, request.curve_type, None,
+                        session, trade, start_date, override, request.curve_type, None,
                     )
                     greeks_start = self.greeks_service.calculate_vanilla_greeks(
                         option_type=trade.trade_type,

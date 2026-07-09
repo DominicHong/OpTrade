@@ -92,6 +92,10 @@ async function onResolveParams() {
         volatility: t.volatility != null ? t.volatility * 100 : null,
         curveResolved: t.curve_resolved,
         curveDate: t.curve_date,
+        rfRateBaseEdited: false,
+        rfRateQuoteEdited: false,
+        spotEdited: false,
+        volatilityEdited: false,
       }))
       allTrades.push(...mapped)
     }
