@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 
 def parse_chinese_date(value: str) -> date | None:
@@ -63,3 +63,8 @@ def parse_bool_chinese(value: str) -> bool | None:
     if value in ("false", "no", "n", "0", "否"):
         return False
     return None
+
+
+def utc_now() -> datetime:
+    """Return the current UTC datetime (use as a ``Field`` default_factory)."""
+    return datetime.now(timezone.utc)

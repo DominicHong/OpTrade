@@ -7,6 +7,8 @@ unit-testable without any fixtures.
 
 import math
 
+from app.utils.ccy_utils import split_ccy_pair
+
 
 # ---------------------------------------------------------------------------
 # Tenor → year-fraction conversion
@@ -154,14 +156,11 @@ def extract_foreign_currency(ccy_pair: str) -> str | None:
     Raises:
         ValueError: if *ccy_pair* is not in ``"XXX/YYY"`` format.
     """
-    ccy_pair = ccy_pair.strip().upper()
-    if "/" not in ccy_pair:
-        raise ValueError(f"Invalid ccy_pair format: {ccy_pair!r}")
-    parts = ccy_pair.split("/")
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        raise ValueError(f"Invalid ccy_pair format: {ccy_pair!r}")
+    normalized = (ccy_pair or "").strip().upper()
+    ccy1, ccy2 = split_ccy_pair(normalized)
+    if ccy1 is None or ccy2 is None:
+        raise ValueError(f"Invalid ccy_pair format: {normalized!r}")
 
-    base, quote = parts
-    if quote != "CNY":
+    if ccy2 != "CNY":
         return None  # Curve only covers CNY-quoted pairs
-    return base
+    return ccy1

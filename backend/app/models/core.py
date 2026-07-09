@@ -13,10 +13,13 @@ Future option types (digital, compound, etc.) add new child tables with the same
 one-to-one FK pattern.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
+
+from app.utils.ccy_utils import split_ccy_pair
+from app.utils.date_utils import utc_now
 
 
 class Portfolio(SQLModel, table=True):
@@ -221,8 +224,8 @@ class OptionTrade(SQLModel, table=True):
 
     # === Timestamps ===
     created_timestamp: datetime | None = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("premium_type")
     @classmethod
@@ -238,8 +241,8 @@ class OptionTrade(SQLModel, table=True):
             return v
         ccy_pair = info.data.get("ccy_pair")
         if ccy_pair:
-            parts = ccy_pair.split("/")
-            if len(parts) == 2 and v not in parts:
+            ccy1, ccy2 = split_ccy_pair(ccy_pair)
+            if ccy1 and ccy2 and v not in (ccy1, ccy2):
                 raise ValueError("premium_currency must be one of the currencies in ccy_pair")
         return v
 
@@ -281,8 +284,8 @@ class SpotTrade(SQLModel, table=True):
     created_timestamp: datetime | None = Field(default=None)
 
     # System timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     # Relationships
     portfolio: Portfolio = Relationship(back_populates="spot_trades")
@@ -366,8 +369,8 @@ class SwapTrade(SQLModel, table=True):
     created_timestamp: datetime | None = Field(default=None)
 
     # System timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     # Relationships
     portfolio: Portfolio = Relationship(back_populates="swap_trades")

@@ -14,6 +14,7 @@ from pathlib import Path
 from sqlmodel import Session, select
 
 from app.models import ImportLog
+from app.utils.ccy_utils import split_ccy_pair
 from app.utils.date_utils import (
     parse_chinese_date,
     parse_chinese_datetime,
@@ -130,10 +131,10 @@ class SpotImportService:
             # Derive ccy1 and ccy2 from ccy_pair (e.g. "USD/CNY" → ccy1="USD", ccy2="CNY")
             ccy_pair = mapped.get("ccy_pair")
             if ccy_pair and isinstance(ccy_pair, str):
-                parts = ccy_pair.split("/")
-                if len(parts) == 2:
-                    mapped["ccy1"] = parts[0].strip()
-                    mapped["ccy2"] = parts[1].strip()
+                ccy1, ccy2 = split_ccy_pair(ccy_pair)
+                if ccy1 and ccy2:
+                    mapped["ccy1"] = ccy1
+                    mapped["ccy2"] = ccy2
 
             # Derive direction from amount signs if not explicitly set
             if not mapped.get("direction"):

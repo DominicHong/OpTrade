@@ -25,7 +25,10 @@ from app.services.exchange_rate_service import (
     ExchangeRateService,
     get_exchange_rate_service,
 )
+from app.utils.ccy_utils import split_ccy_pair
+from app.utils.currency_pairs import CNY_QUOTED_PAIRS, SUPPORTED_CCY_PAIRS
 from app.utils.curve_helpers import extract_foreign_currency
+from app.utils.valuation_params import build_missing_params_error
 
 import logging
 
@@ -33,12 +36,6 @@ logger = logging.getLogger("optrade.service.portfolio")
 
 
 _SELL_DIRECTIONS = {"sell", "卖出"}
-
-# Currency pairs whose quote currency is CNY — resolved via the FX implied
-# rate curve (existing path).  Non-CNY pairs use ExchangeRateService.
-_CNY_QUOTED_PAIRS: set[str] = {
-    "USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY",
-}
 
 
 def _is_sell(direction: str | None) -> bool:
@@ -49,13 +46,11 @@ def _is_sell(direction: str | None) -> bool:
 
 
 def _split_ccy_pair(ccy_pair: str | None) -> tuple[str | None, str | None]:
-    """Split ``"USD/CNY"`` → ``("USD", "CNY")``.  Returns ``(None, None)`` if invalid."""
-    if not ccy_pair or "/" not in ccy_pair:
+    """Split ``"USD/CNY"`` -> ``("USD", "CNY")`` (uppercased).  Returns ``(None, None)`` if invalid."""
+    base, quote = split_ccy_pair(ccy_pair)
+    if base is None or quote is None:
         return None, None
-    parts = ccy_pair.upper().split("/")
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        return None, None
-    return parts[0], parts[1]
+    return base.upper(), quote.upper()
 
 
 def _resolve_premium_in_ccy2(
@@ -75,10 +70,8 @@ def _resolve_premium_in_ccy2(
         return None
 
     ccy1: str | None = None
-    if ccy_pair and "/" in ccy_pair:
-        parts = ccy_pair.split("/")
-        if len(parts) == 2:
-            ccy1 = parts[0]
+    if ccy_pair:
+        ccy1, _ = split_ccy_pair(ccy_pair)
 
     if premium_currency and ccy1 and premium_currency == ccy1:
         # Premium in base currency → convert to quote currency via spot.
@@ -99,21 +92,12 @@ def _missing_valuation_params(
     if all four are present. Used to reject live options that cannot be
     valued because the curve did not resolve a parameter and the user
     supplied no override."""
-    missing: list[str] = []
-    if spot is None:
-        missing.append("即期汇率")
-    if vol is None:
-        missing.append("波动率")
-    if rf_base is None:
-        missing.append("Base利率")
-    if rf_quote is None:
-        missing.append("Quote利率")
-    if missing:
-        return (
-            "缺少估值参数：" + "、".join(missing)
-            + "（曲线未解析且未提供覆盖值，请在参数表中填写）"
-        )
-    return None
+    return build_missing_params_error([
+        (spot, "即期汇率"),
+        (vol, "波动率"),
+        (rf_base, "Base利率"),
+        (rf_quote, "Quote利率"),
+    ])
 
 
 class PortfolioService:
@@ -342,7 +326,7 @@ class PortfolioService:
 
         ccy_pair = (trade.ccy_pair or "").upper()
         base_ccy, quote_ccy = _split_ccy_pair(ccy_pair)
-        is_cny_quoted = ccy_pair in _CNY_QUOTED_PAIRS
+        is_cny_quoted = ccy_pair in CNY_QUOTED_PAIRS
 
         # --- Curve resolution ---
         if curve_type == "fx_implied_rate":
@@ -692,8 +676,6 @@ class PortfolioService:
         Returns:
             ``(market_rate, error)`` — exactly one is non-None.
         """
-        from app.schemas.portfolio import SUPPORTED_CCY_PAIRS
-
         if not ccy_pair or "/" not in ccy_pair:
             return None, f"Invalid currency pair: {ccy_pair!r}"
 
@@ -701,9 +683,9 @@ class PortfolioService:
             return None, f"Unsupported currency pair: {ccy_pair}"
 
         ccy_pair_upper = ccy_pair.upper()
-        if ccy_pair_upper in _CNY_QUOTED_PAIRS:
+        if ccy_pair_upper in CNY_QUOTED_PAIRS:
             # CNY-quoted pair → use FX implied rate curve
-            foreign_ccy = ccy_pair_upper.split("/")[0]
+            foreign_ccy = split_ccy_pair(ccy_pair_upper)[0]
             market_rate = self.curve_service.get_spot_rate_for_date(
                 session, valuation_date, foreign_ccy,
             )
@@ -733,8 +715,8 @@ class PortfolioService:
         if not ccy_pair_upper or "/" not in ccy_pair_upper:
             return None
 
-        if ccy_pair_upper in _CNY_QUOTED_PAIRS:
-            foreign_ccy = ccy_pair_upper.split("/")[0]
+        if ccy_pair_upper in CNY_QUOTED_PAIRS:
+            foreign_ccy = split_ccy_pair(ccy_pair_upper)[0]
             return self.curve_service.get_spot_rate_for_date(
                 session, expiry_date, foreign_ccy,
             )
@@ -1299,13 +1281,13 @@ class PortfolioService:
             ccy2 = (trade.ccy2 or "").upper()
 
             # Fall back to parsing from ccy_pair if ccy1/ccy2 not populated
-            if (not ccy1 or not ccy2) and trade.ccy_pair and "/" in trade.ccy_pair:
-                parts = trade.ccy_pair.upper().split("/")
-                if len(parts) == 2:
+            if (not ccy1 or not ccy2) and trade.ccy_pair:
+                pair_base, pair_quote = _split_ccy_pair(trade.ccy_pair)
+                if pair_base and pair_quote:
                     if not ccy1:
-                        ccy1 = parts[0]
+                        ccy1 = pair_base
                     if not ccy2:
-                        ccy2 = parts[1]
+                        ccy2 = pair_quote
 
             amt1 = trade.ccy1_amount or 0.0
             amt2 = trade.ccy2_amount or 0.0

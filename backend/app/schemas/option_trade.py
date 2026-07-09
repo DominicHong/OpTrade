@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.utils.ccy_utils import split_ccy_pair
+
 
 class OptionTradeBase(BaseModel):
     """Common fields shared across option trade schemas."""
@@ -71,8 +73,8 @@ class OptionTradeBase(BaseModel):
             return v
         ccy_pair = info.data.get("ccy_pair")
         if ccy_pair:
-            parts = ccy_pair.split("/")
-            if len(parts) == 2 and v not in parts:
+            ccy1, ccy2 = split_ccy_pair(ccy_pair)
+            if ccy1 and ccy2 and v not in (ccy1, ccy2):
                 raise ValueError("premium_currency must be one of the currencies in ccy_pair")
         return v
 

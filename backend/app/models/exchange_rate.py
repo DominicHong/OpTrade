@@ -7,9 +7,11 @@ convert P&L from a trade's quote currency into CNY for aggregation.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlmodel import Field, SQLModel
+
+from app.utils.date_utils import utc_now
 
 
 class ExchangeRate(SQLModel, table=True):
@@ -28,4 +30,4 @@ class ExchangeRate(SQLModel, table=True):
     rate: float  # 1 unit ccy1 = `rate` units ccy2
     source: str = Field(max_length=50)  # "fx_implied_curve" | "cross_derived" | "manual" | "upload"
     source_ref: str | None = Field(default=None, max_length=200)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=utc_now)

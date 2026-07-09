@@ -9,6 +9,7 @@ from datetime import date
 
 import QuantLib as ql
 from app.utils.quantlib_helpers import get_ql_option_type, get_ql_position
+from app.utils.valuation_params import build_missing_params_error
 
 # Fixed anchor date — avoids ql.Date.todaysDate() which makes results
 # non-reproducible and dependent on the system clock.
@@ -113,18 +114,18 @@ class GreeksService:
             # data instead of silently relying on hardcoded defaults. Expired
             # options already short-circuited to zeros above, so this only
             # guards options that still need to be valued.
-            missing: list[str] = []
-            if spot is None:
-                missing.append("spot")
-            if strike is None:
-                missing.append("strike")
-            if volatility is None:
-                missing.append("volatility")
-            if rf_rate_base is None:
-                missing.append("rf_rate_base")
-            if rf_rate_quote is None:
-                missing.append("rf_rate_quote")
-            if missing:
+            error_msg = build_missing_params_error(
+                [
+                    (spot, "spot"),
+                    (strike, "strike"),
+                    (volatility, "volatility"),
+                    (rf_rate_base, "rf_rate_base"),
+                    (rf_rate_quote, "rf_rate_quote"),
+                ],
+                joiner=", ",
+                suffix="（曲线未解析且未提供覆盖值）",
+            )
+            if error_msg:
                 return {
                     "npv": None,
                     "delta": None,
@@ -132,8 +133,7 @@ class GreeksService:
                     "vega": None,
                     "theta": None,
                     "rho": None,
-                    "error": "缺少估值参数：" + ", ".join(missing)
-                             + "（曲线未解析且未提供覆盖值）",
+                    "error": error_msg,
                 }
 
             ql.Settings.instance().evaluationDate = eval_d

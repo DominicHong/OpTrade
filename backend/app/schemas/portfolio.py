@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
+from app.utils.currency_pairs import SUPPORTED_CCY_PAIRS
+
 
 class PortfolioRead(BaseModel):
     id: int
@@ -148,10 +150,7 @@ class PortfolioGreeksResponse(BaseModel):
 # Multi-portfolio aggregated P&L analysis
 # ---------------------------------------------------------------------------
 
-SUPPORTED_CCY_PAIRS: set[str] = {
-    "USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY",
-    "USD/HKD", "USD/JPY", "EUR/USD", "GBP/USD",
-}
+# SUPPORTED_CCY_PAIRS is re-exported from app.utils.currency_pairs (see top).
 
 
 class AggregatedAnalysisRequest(BaseModel):

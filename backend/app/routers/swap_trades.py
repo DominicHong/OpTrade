@@ -16,7 +16,7 @@ Import endpoints at /api/v1/imports/swap:
 
 import os
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
@@ -33,6 +33,8 @@ from app.schemas.swap_trade import (
     SwapTradeUpdate,
 )
 from app.services.swap_import_service import swap_import_service
+from app.utils.ccy_utils import split_ccy_pair
+from app.utils.date_utils import utc_now
 
 # ── CRUD Router ──────────────────────────────────────────────────────────────────
 
@@ -209,10 +211,10 @@ def create_swap_trade(
     trade_data["portfolio_name"] = pname
 
     if trade_data.get("ccy_pair") and not (trade_data.get("ccy1") and trade_data.get("ccy2")):
-        parts = trade_data["ccy_pair"].split("/")
-        if len(parts) == 2:
-            trade_data["ccy1"] = parts[0].strip()
-            trade_data["ccy2"] = parts[1].strip()
+        ccy1, ccy2 = split_ccy_pair(trade_data["ccy_pair"])
+        if ccy1 and ccy2:
+            trade_data["ccy1"] = ccy1
+            trade_data["ccy2"] = ccy2
 
     trade = SwapTrade(**trade_data)
     session.add(trade)
@@ -244,10 +246,10 @@ def update_swap_trade(
 
     # Derive ccy1/ccy2 if ccy_pair changed
     if update_data.get("ccy_pair"):
-        parts = update_data["ccy_pair"].split("/")
-        if len(parts) == 2:
-            update_data["ccy1"] = parts[0].strip()
-            update_data["ccy2"] = parts[1].strip()
+        ccy1, ccy2 = split_ccy_pair(update_data["ccy_pair"])
+        if ccy1 and ccy2:
+            update_data["ccy1"] = ccy1
+            update_data["ccy2"] = ccy2
 
     for key, value in update_data.items():
         setattr(trade, key, value)
@@ -308,8 +310,8 @@ async def upload_swap_excel(
             file_hash=parsed.file_hash,
             total_rows=parsed.total_rows,
             status="validated",
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc),
+            started_at=utc_now(),
+            completed_at=utc_now(),
             import_type="swap",
         )
         session.add(import_log)

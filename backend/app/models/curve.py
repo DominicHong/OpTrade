@@ -7,9 +7,11 @@ for existing tables.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlmodel import Field, SQLModel
+
+from app.utils.date_utils import utc_now
 
 
 class CurveDefinition(SQLModel, table=True):
@@ -24,7 +26,7 @@ class CurveDefinition(SQLModel, table=True):
     source_url: str | None = Field(default=None, max_length=500)
     parameters: str | None = Field(default=None)  # JSON string of crawl params
     is_active: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class FxImpliedRate(SQLModel, table=True):
@@ -53,4 +55,4 @@ class FxImpliedRate(SQLModel, table=True):
 
     # Metadata
     source: str | None = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=utc_now)

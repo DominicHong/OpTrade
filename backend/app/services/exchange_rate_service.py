@@ -30,18 +30,11 @@ from app.schemas.exchange_rate import (
     ExchangeRateRead,
     ExchangeRateUploadResult,
 )
+from app.utils.ccy_utils import split_ccy_pair
+from app.utils.currency_pairs import CNY_QUOTED_PAIRS, SUPPORTED_CCY_PAIRS
 
 logger = logging.getLogger("optrade.service.exchange_rate")
 
-
-# 9 supported pairs (AUD/USD deferred — no AUD/CNY source available)
-SUPPORTED_CCY_PAIRS: set[str] = {
-    "USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY",
-    "USD/HKD", "USD/JPY", "EUR/USD", "GBP/USD",
-}
-
-# Direct CNY-quoted pairs → pulled straight from fx_implied_rates.spot_rate
-_DIRECT_CNY_PAIRS: list[str] = ["USD/CNY", "EUR/CNY", "HKD/CNY", "GBP/CNY", "JPY/CNY"]
 
 # Cross-derived pairs → (pair, numerator_pair, denominator_pair)
 _CROSS_PAIR_FORMULAS: list[tuple[str, str, str]] = [
@@ -256,15 +249,15 @@ class ExchangeRateService:
         ccy_pair = ccy_pair.upper()
 
         # Direct CNY pair → look up foreign_currency spot
-        if ccy_pair in _DIRECT_CNY_PAIRS:
-            foreign_ccy = ccy_pair.split("/")[0]
+        if ccy_pair in CNY_QUOTED_PAIRS:
+            foreign_ccy = split_ccy_pair(ccy_pair)[0]
             return self._fx_implied_spot(session, rate_date, foreign_ccy)
 
         # Cross pair → derive from two CNY-quoted spots
         for pair, num, den in _CROSS_PAIR_FORMULAS:
             if pair == ccy_pair:
-                num_ccy = num.split("/")[0]
-                den_ccy = den.split("/")[0]
+                num_ccy = split_ccy_pair(num)[0]
+                den_ccy = split_ccy_pair(den)[0]
                 num_rate = self._fx_implied_spot(session, rate_date, num_ccy)
                 den_rate = self._fx_implied_spot(session, rate_date, den_ccy)
                 if num_rate is not None and den_rate is not None and den_rate != 0:
@@ -326,8 +319,8 @@ class ExchangeRateService:
         Upserts: existing rows for ``(rate_date, ccy_pair)`` are updated.
         """
         direct_rates: dict[str, float] = {}
-        for pair in _DIRECT_CNY_PAIRS:
-            foreign_ccy = pair.split("/")[0]
+        for pair in CNY_QUOTED_PAIRS:
+            foreign_ccy = split_ccy_pair(pair)[0]
             spot = self._fx_implied_spot(session, rate_date, foreign_ccy)
             if spot is None:
                 logger.warning(
@@ -347,7 +340,7 @@ class ExchangeRateService:
 
         # 1. Direct CNY pairs
         for pair, rate in direct_rates.items():
-            foreign_ccy = pair.split("/")[0]
+            foreign_ccy = split_ccy_pair(pair)[0]
             a, u = self._upsert(
                 session, rate_date, pair, rate,
                 source="fx_implied_curve",

@@ -7,7 +7,6 @@ Single-step flow:
 
 import os
 import tempfile
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session, select
@@ -20,6 +19,7 @@ from app.schemas.import_ import (
     ImportParsedRow,
 )
 from app.services.import_service import import_service
+from app.utils.date_utils import utc_now
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 
@@ -57,8 +57,8 @@ async def upload_excel(
             file_hash=parsed.file_hash,
             total_rows=parsed.total_rows,
             status="validated",
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc),
+            started_at=utc_now(),
+            completed_at=utc_now(),
         )
         session.add(import_log)
         session.commit()
@@ -129,7 +129,7 @@ def confirm_import(
         raise HTTPException(status_code=409, detail=f"Import is in status '{import_log.status}', expected 'validated'")
 
     import_log.status = "processing"
-    import_log.started_at = datetime.now(timezone.utc)
+    import_log.started_at = utc_now()
     session.add(import_log)
     session.commit()
 
