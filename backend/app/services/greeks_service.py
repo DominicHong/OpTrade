@@ -8,7 +8,7 @@ All QuantLib imports and calculations are confined to this service layer.
 from datetime import date
 
 import QuantLib as ql
-from app.utils.quantlib_helpers import get_ql_option_type, get_ql_position
+from app.utils.quantlib_helpers import build_vanilla_option, get_ql_position
 from app.utils.valuation_params import build_missing_params_error
 
 # Fixed anchor date — avoids ql.Date.todaysDate() which makes results
@@ -136,35 +136,10 @@ class GreeksService:
                     "error": error_msg,
                 }
 
-            ql.Settings.instance().evaluationDate = eval_d
-
-            # Set up the option
-            option_type_ql = get_ql_option_type(option_type)
-            payoff = ql.PlainVanillaPayoff(option_type_ql, strike)
-            exercise = ql.EuropeanExercise(exp_d)
-
-            # Market data
-            spot_handle = ql.QuoteHandle(ql.SimpleQuote(spot))
-            vol_handle = ql.BlackVolTermStructureHandle(
-                ql.BlackConstantVol(eval_d, ql.TARGET(), volatility, ql.Actual365Fixed())
+            option = build_vanilla_option(
+                option_type, strike, exp_d, eval_d,
+                spot, volatility, rf_rate_base, rf_rate_quote,
             )
-            r_base_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(eval_d, rf_rate_base, ql.Actual365Fixed())
-            )
-            r_quote_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(eval_d, rf_rate_quote, ql.Actual365Fixed())
-            )
-
-            # Black-Scholes-Merton process for FX
-            # r_base maps to dividendYield, r_quote maps to riskFreeRate
-            bsm_process = ql.BlackScholesMertonProcess(
-                spot_handle, r_base_handle, r_quote_handle, vol_handle
-            )
-
-            # Build option
-            option = ql.VanillaOption(payoff, exercise)
-            engine = ql.AnalyticEuropeanEngine(bsm_process)
-            option.setPricingEngine(engine)
 
             # Read results
             npv = option.NPV()

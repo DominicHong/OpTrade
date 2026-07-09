@@ -58,3 +58,48 @@ def get_valuation_date(today: date | None = None) -> "ql.Date":
     if today is None:
         today = date.today()
     return date_to_ql(today)
+
+
+def build_vanilla_option(
+    option_type: str,
+    strike: float,
+    expiry_date: "ql.Date",
+    eval_date: "ql.Date",
+    spot: float,
+    volatility: float,
+    rf_rate_base: float,
+    rf_rate_quote: float,
+) -> "ql.VanillaOption":
+    """Build a priced vanilla European FX option (Black-Scholes-Merton).
+
+    Sets the evaluation date, constructs payoff / exercise / market-data
+    handles, attaches the ``AnalyticEuropeanEngine`` and returns the option
+    ready for ``.NPV()`` / ``.delta()`` / ``.gamma()`` / ``.vega()`` /
+    ``.thetaPerDay()`` / ``.rho()``.
+
+    ``rf_rate_base`` maps to the dividend yield (base currency) and
+    ``rf_rate_quote`` maps to the risk-free rate (quote currency).
+    """
+    ql.Settings.instance().evaluationDate = eval_date
+
+    payoff = ql.PlainVanillaPayoff(get_ql_option_type(option_type), strike)
+    exercise = ql.EuropeanExercise(expiry_date)
+
+    spot_handle = ql.QuoteHandle(ql.SimpleQuote(spot))
+    vol_handle = ql.BlackVolTermStructureHandle(
+        ql.BlackConstantVol(eval_date, ql.TARGET(), volatility, ql.Actual365Fixed())
+    )
+    r_base_handle = ql.YieldTermStructureHandle(
+        ql.FlatForward(eval_date, rf_rate_base, ql.Actual365Fixed())
+    )
+    r_quote_handle = ql.YieldTermStructureHandle(
+        ql.FlatForward(eval_date, rf_rate_quote, ql.Actual365Fixed())
+    )
+
+    bsm_process = ql.BlackScholesMertonProcess(
+        spot_handle, r_base_handle, r_quote_handle, vol_handle
+    )
+
+    option = ql.VanillaOption(payoff, exercise)
+    option.setPricingEngine(ql.AnalyticEuropeanEngine(bsm_process))
+    return option

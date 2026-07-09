@@ -6,7 +6,7 @@ All QuantLib code is isolated in this service for testability.
 """
 
 import QuantLib as ql
-from app.utils.quantlib_helpers import get_ql_option_type, get_ql_position
+from app.utils.quantlib_helpers import build_vanilla_option, get_ql_position
 
 
 class PricingService:
@@ -32,32 +32,13 @@ class PricingService:
         """
         try:
             today = ql.Date.todaysDate()
-            ql.Settings.instance().evaluationDate = today
-
             days_to_expiry = int(time_to_expiry_years * 365)
             expiry_date = today + days_to_expiry
 
-            option_type_ql = get_ql_option_type(option_type)
-            payoff = ql.PlainVanillaPayoff(option_type_ql, strike)
-            exercise = ql.EuropeanExercise(expiry_date)
-
-            spot_handle = ql.QuoteHandle(ql.SimpleQuote(spot))
-            vol_handle = ql.BlackVolTermStructureHandle(
-                ql.BlackConstantVol(today, ql.TARGET(), volatility, ql.Actual365Fixed())
+            option = build_vanilla_option(
+                option_type, strike, expiry_date, today,
+                spot, volatility, rf_rate_base, rf_rate_quote,
             )
-            r_base_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, rf_rate_base, ql.Actual365Fixed())
-            )
-            r_quote_handle = ql.YieldTermStructureHandle(
-                ql.FlatForward(today, rf_rate_quote, ql.Actual365Fixed())
-            )
-
-            bsm_process = ql.BlackScholesMertonProcess(
-                spot_handle, r_base_handle, r_quote_handle, vol_handle
-            )
-
-            option = ql.VanillaOption(payoff, exercise)
-            option.setPricingEngine(ql.AnalyticEuropeanEngine(bsm_process))
 
             npv = option.NPV() * notional
 
