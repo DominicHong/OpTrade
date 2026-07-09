@@ -19,74 +19,46 @@ import tempfile
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
 from sqlmodel import Session, select, func
 
 from app.database import get_session
 from app.models import ImportLog, SpotTrade
+from app.routers._crud import (
+    CrudConfig,
+    apply_to_both,
+    build_crud_router,
+    build_list_response,
+    derive_ccy_if_missing,
+    derive_ccy_if_pair_changed,
+)
 from app.schemas.import_ import ImportConfirmResponse, ImportParsedRow
 from app.schemas.spot_trade import (
     SpotTradeCreate,
-    SpotTradeFilterParams,
     SpotTradeListResponse,
     SpotTradeRead,
     SpotTradeUpdate,
 )
 from app.services.spot_import_service import spot_import_service
-from app.utils.ccy_utils import split_ccy_pair
 from app.utils.date_utils import utc_now
 
 # ── CRUD Router ──────────────────────────────────────────────────────────────────
 
-router = APIRouter(prefix="/api/v1/spot-trades", tags=["spot-trades"])
-
-
-class BatchDeleteRequest(BaseModel):
-    ids: list[int]
-
-
-def _resolve_portfolio(
-    portfolio_id: int | None, portfolio_name: str | None, session: Session
-) -> tuple[int | None, str | None]:
-    """Resolve portfolio_name to portfolio_id. Errors if name given but not found."""
-    from app.models import Portfolio
-
-    if portfolio_id is not None:
-        portfolio = session.get(Portfolio, portfolio_id)
-        if not portfolio:
-            raise HTTPException(status_code=404, detail=f"Portfolio with id {portfolio_id} not found")
-        return portfolio.id, portfolio.name
-
-    if portfolio_name:
-        portfolio = session.exec(
-            select(Portfolio).where(Portfolio.name == portfolio_name)
-        ).first()
-        if not portfolio:
-            raise HTTPException(
-                status_code=404,
-                detail=f"投组 '{portfolio_name}' 不存在，请先在投组管理页面创建该投组",
-            )
-        return portfolio.id, portfolio.name
-
-    return None, None
-
-
-@router.post("/batch-delete")
-def batch_delete_spot_trades(
-    req: BatchDeleteRequest,
-    session: Session = Depends(get_session),
-) -> dict[str, str]:
-    """Delete multiple spot trades by their database IDs."""
-    if not req.ids:
-        raise HTTPException(status_code=400, detail="No spot trade IDs provided")
-    deleted = 0
-    for spot_id in req.ids:
-        trade = session.get(SpotTrade, spot_id)
-        if trade:
-            session.delete(trade)
-            deleted += 1
-    session.commit()
-    return {"status": "deleted", "count": str(deleted)}
+router = build_crud_router(
+    CrudConfig(
+        model=SpotTrade,
+        read_schema=SpotTradeRead,
+        create_schema=SpotTradeCreate,
+        update_schema=SpotTradeUpdate,
+        list_response_schema=SpotTradeListResponse,
+        prefix="/api/v1/spot-trades",
+        tags=["spot-trades"],
+        entity_label="Spot trade",
+        default_sort="trade_date",
+        default_sort_order="desc",
+        pre_create_hook=derive_ccy_if_missing,
+        pre_update_hook=derive_ccy_if_pair_changed,
+    )
+)
 
 
 @router.get("", response_model=SpotTradeListResponse)
@@ -113,166 +85,46 @@ def list_spot_trades(
     count_query = select(func.count(SpotTrade.id))
 
     if portfolio_id is not None:
-        query = query.where(SpotTrade.portfolio_id == portfolio_id)
-        count_query = count_query.where(SpotTrade.portfolio_id == portfolio_id)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.portfolio_id == portfolio_id)
     if counterparty_id is not None:
-        query = query.where(SpotTrade.counterparty_id == counterparty_id)
-        count_query = count_query.where(SpotTrade.counterparty_id == counterparty_id)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.counterparty_id == counterparty_id)
     if ccy_pair:
-        query = query.where(SpotTrade.ccy_pair == ccy_pair)
-        count_query = count_query.where(SpotTrade.ccy_pair == ccy_pair)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.ccy_pair == ccy_pair)
     if direction:
-        query = query.where(SpotTrade.direction == direction)
-        count_query = count_query.where(SpotTrade.direction == direction)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.direction == direction)
     if event_type:
-        query = query.where(SpotTrade.event_type == event_type)
-        count_query = count_query.where(SpotTrade.event_type == event_type)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.event_type == event_type)
     if trade_date_from:
-        query = query.where(SpotTrade.trade_date >= trade_date_from)
-        count_query = count_query.where(SpotTrade.trade_date >= trade_date_from)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.trade_date >= trade_date_from)
     if trade_date_to:
-        query = query.where(SpotTrade.trade_date <= trade_date_to)
-        count_query = count_query.where(SpotTrade.trade_date <= trade_date_to)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.trade_date <= trade_date_to)
     if settlement_date_from:
-        query = query.where(SpotTrade.settlement_date >= settlement_date_from)
-        count_query = count_query.where(SpotTrade.settlement_date >= settlement_date_from)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.settlement_date >= settlement_date_from)
     if settlement_date_to:
-        query = query.where(SpotTrade.settlement_date <= settlement_date_to)
-        count_query = count_query.where(SpotTrade.settlement_date <= settlement_date_to)
+        query, count_query = apply_to_both(query, count_query, SpotTrade.settlement_date <= settlement_date_to)
     if search:
         search_term = f"%{search}%"
-        query = query.where(
+        cond = (
             (SpotTrade.trade_id.ilike(search_term))
             | (SpotTrade.counterparty_name.ilike(search_term))
             | (SpotTrade.portfolio_name.ilike(search_term))
             | (SpotTrade.ccy_pair.ilike(search_term))
         )
-        count_query = count_query.where(
-            (SpotTrade.trade_id.ilike(search_term))
-            | (SpotTrade.counterparty_name.ilike(search_term))
-            | (SpotTrade.portfolio_name.ilike(search_term))
-            | (SpotTrade.ccy_pair.ilike(search_term))
-        )
+        query, count_query = apply_to_both(query, count_query, cond)
 
-    total = session.exec(count_query).one()
-
-    sort_column = getattr(SpotTrade, sort_by, SpotTrade.trade_date)
-    if sort_order == "desc":
-        query = query.order_by(sort_column.desc())
-    else:
-        query = query.order_by(sort_column)
-
-    offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
-
-    trades = session.exec(query).all()
-
-    return SpotTradeListResponse(
-        data=[SpotTradeRead.model_validate(t) for t in trades],
-        total=total,
+    return build_list_response(
+        session,
+        SpotTrade,
+        SpotTradeRead,
+        SpotTradeListResponse,
+        query,
+        count_query,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        default_sort_col=SpotTrade.trade_date,
         page=page,
         page_size=page_size,
     )
-
-
-@router.get("/{spot_id}", response_model=SpotTradeRead)
-def get_spot_trade(
-    spot_id: int,
-    session: Session = Depends(get_session),
-) -> SpotTradeRead:
-    """Get a single spot trade by its database ID."""
-    trade = session.get(SpotTrade, spot_id)
-    if not trade:
-        raise HTTPException(status_code=404, detail=f"Spot trade {spot_id} not found")
-    return SpotTradeRead.model_validate(trade)
-
-
-@router.post("", response_model=SpotTradeRead, status_code=201)
-def create_spot_trade(
-    data: SpotTradeCreate,
-    session: Session = Depends(get_session),
-) -> SpotTradeRead:
-    """Create a new spot trade manually."""
-    # Check for duplicate trade_id
-    existing = session.exec(
-        select(SpotTrade).where(SpotTrade.trade_id == data.trade_id)
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=409, detail=f"Spot trade with trade_id '{data.trade_id}' already exists"
-        )
-
-    # Resolve portfolio_name → portfolio_id
-    pid, pname = _resolve_portfolio(data.portfolio_id, data.portfolio_name, session)
-
-    # Derive ccy1/ccy2 from ccy_pair
-    trade_data = data.model_dump()
-    trade_data["portfolio_id"] = pid
-    trade_data["portfolio_name"] = pname
-
-    if trade_data.get("ccy_pair") and not (trade_data.get("ccy1") and trade_data.get("ccy2")):
-        ccy1, ccy2 = split_ccy_pair(trade_data["ccy_pair"])
-        if ccy1 and ccy2:
-            trade_data["ccy1"] = ccy1
-            trade_data["ccy2"] = ccy2
-
-    trade = SpotTrade(**trade_data)
-    session.add(trade)
-    session.commit()
-    session.refresh(trade)
-    return SpotTradeRead.model_validate(trade)
-
-
-@router.put("/{spot_id}", response_model=SpotTradeRead)
-def update_spot_trade(
-    spot_id: int,
-    update: SpotTradeUpdate,
-    session: Session = Depends(get_session),
-) -> SpotTradeRead:
-    """Update mutable fields of a spot trade."""
-    trade = session.get(SpotTrade, spot_id)
-    if not trade:
-        raise HTTPException(status_code=404, detail=f"Spot trade {spot_id} not found")
-
-    update_data = update.model_dump(exclude_unset=True)
-
-    # Resolve portfolio_name → portfolio_id if provided
-    pid = update_data.get("portfolio_id")
-    pname = update_data.get("portfolio_name")
-    if "portfolio_id" in update_data or "portfolio_name" in update_data:
-        resolved_id, resolved_name = _resolve_portfolio(pid, pname, session)
-        update_data["portfolio_id"] = resolved_id
-        update_data["portfolio_name"] = resolved_name
-
-    # Derive ccy1/ccy2 if ccy_pair changed
-    if update_data.get("ccy_pair"):
-        ccy1, ccy2 = split_ccy_pair(update_data["ccy_pair"])
-        if ccy1 and ccy2:
-            update_data["ccy1"] = ccy1
-            update_data["ccy2"] = ccy2
-
-    for key, value in update_data.items():
-        setattr(trade, key, value)
-
-    session.add(trade)
-    session.commit()
-    session.refresh(trade)
-
-    return SpotTradeRead.model_validate(trade)
-
-
-@router.delete("/{spot_id}")
-def delete_spot_trade(
-    spot_id: int,
-    session: Session = Depends(get_session),
-) -> dict[str, str]:
-    """Delete a spot trade."""
-    trade = session.get(SpotTrade, spot_id)
-    if not trade:
-        raise HTTPException(status_code=404, detail=f"Spot trade {spot_id} not found")
-    session.delete(trade)
-    session.commit()
-    return {"status": "deleted", "trade_id": str(spot_id)}
 
 
 # ── Import Router ─────────────────────────────────────────────────────────────────
