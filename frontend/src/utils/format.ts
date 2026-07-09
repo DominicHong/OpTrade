@@ -77,3 +77,36 @@ export function greekColorClass(value: number | null | undefined): string {
   if (value < 0) return 'text-negative'
   return ''
 }
+
+/** Format a number with an em-dash placeholder for null/undefined.
+ *
+ * Defaults to 4 decimal places (the precision used by most portfolio detail
+ * tables).  Callers wanting 2 decimals (e.g. 万-scaled amounts) should pass
+ * the second argument explicitly.
+ */
+export function fmt(value: number | null | undefined, decimals: number = 4): string {
+  if (value === null || value === undefined) return '—'
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+/** Passthrough date display: returns '—' for empty, otherwise the value as-is. */
+export function fmtDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  return value
+}
+
+/** CSS class for positive/negative profit values ('' for zero/null). */
+export function profitColor(value: number | null | undefined): string {
+  if (value === null || value === undefined) return ''
+  if (value > 0) return 'profit-positive'
+  if (value < 0) return 'profit-negative'
+  return ''
+}
+
+/** Whether the option type represents a call. */
+export function isCall(optionType: string | null | undefined): boolean {
+  return !!optionType && optionType.toUpperCase() === 'CALL'
+}

@@ -86,7 +86,7 @@ async function doDelete() {
     await store.removePortfolio(deletingPortfolio.value.id)
     ui.addNotification('success', `投组 "${deletingPortfolio.value.name}" 已删除`)
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+    ui.notifyError(e, '删除失败')
   } finally {
     showDeleteConfirm.value = false
     deletingPortfolio.value = null

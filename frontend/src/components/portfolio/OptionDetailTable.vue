@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { OptionTradeAnalysisDetail } from '@/types/portfolio'
-import { toWan } from '@/utils/format'
+import { fmt, fmtDate, isCall, profitColor, toWan } from '@/utils/format'
 
 const props = defineProps<{
   trades: OptionTradeAnalysisDetail[]
@@ -16,30 +16,6 @@ const pagedTrades = computed(() => {
   const start = (page.value - 1) * pageSize
   return props.trades.slice(start, start + pageSize)
 })
-
-function fmt(val: number | null | undefined, decimals = 4): string {
-  if (val == null) return '—'
-  return val.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
-
-function fmtDate(val: string | null | undefined): string {
-  if (!val) return '—'
-  return val
-}
-
-function profitColor(val: number | null | undefined): string {
-  if (val == null) return ''
-  if (val > 0) return 'profit-positive'
-  if (val < 0) return 'profit-negative'
-  return ''
-}
-
-function isCall(optionType: string | null | undefined): boolean {
-  return !!optionType && optionType.toUpperCase() === 'CALL'
-}
 
 function exerciseStatusClass(status: string | null | undefined): string {
   if (!status) return ''

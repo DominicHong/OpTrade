@@ -233,7 +233,7 @@ async function doBatchDelete() {
     ui.addNotification('success', `已删除 ${count} 条交易`)
     selectedIds.value = []
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
+    ui.notifyError(e, '批量删除失败')
   } finally {
     showBatchDeleteConfirm.value = false
   }
@@ -244,7 +244,7 @@ async function deleteOptionTrade(trade: OptionTrade) {
     await store.removeTrade(trade.id)
     ui.addNotification('success', '期权交易已删除')
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+    ui.notifyError(e, '删除失败')
   }
 }
 
@@ -267,7 +267,7 @@ async function doSpotBatchDelete() {
     ui.addNotification('success', `已删除 ${count} 条即期交易`)
     spotSelectedIds.value = []
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
+    ui.notifyError(e, '批量删除失败')
   } finally {
     showSpotBatchDeleteConfirm.value = false
   }
@@ -292,7 +292,7 @@ async function doSwapBatchDelete() {
     ui.addNotification('success', `已删除 ${count} 条掉期交易`)
     swapSelectedIds.value = []
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '批量删除失败')
+    ui.notifyError(e, '批量删除失败')
   } finally {
     showSwapBatchDeleteConfirm.value = false
   }
@@ -437,7 +437,7 @@ async function handleUpload() {
       store.loadTrades()
     }
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '导入失败')
+    ui.notifyError(e, '导入失败')
   } finally {
     importLoading.value = false
   }
@@ -582,7 +582,7 @@ async function deleteSpotTrade(trade: SpotTrade) {
     await spotStore.removeTrade(trade.id)
     ui.addNotification('success', '即期交易已删除')
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+    ui.notifyError(e, '删除失败')
   }
 }
 
@@ -664,7 +664,7 @@ async function deleteSwapTrade(trade: SwapTrade) {
     await swapStore.removeTrade(trade.id)
     ui.addNotification('success', '掉期交易已删除')
   } catch (e: unknown) {
-    ui.addNotification('error', e instanceof Error ? e.message : '删除失败')
+    ui.notifyError(e, '删除失败')
   }
 }
 

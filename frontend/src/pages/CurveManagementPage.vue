@@ -83,7 +83,7 @@ async function handleExport() {
     window.URL.revokeObjectURL(url)
     ui.addNotification('success', '曲线数据导出成功')
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '导出失败')
+    ui.notifyError(e, '导出失败')
   }
 }
 
@@ -113,7 +113,7 @@ async function handleFileChange(event: Event) {
     ui.addNotification('success', result.message || `导入成功：${result.records_added} 条记录`)
     await Promise.all([store.loadRates(), store.loadCoverage()])
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '上传失败')
+    ui.notifyError(e, '上传失败')
   } finally {
     uploading.value = false
   }

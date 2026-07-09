@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toWan } from '@/utils/format'
+import { fmt as _fmt, profitColor, toWan } from '@/utils/format'
 
 const props = defineProps<{
   totalOptionPnlCny: number
@@ -8,20 +8,7 @@ const props = defineProps<{
   totalPnlCny: number
 }>()
 
-function fmt(val: number | null | undefined, decimals = 2): string {
-  if (val == null) return '—'
-  return val.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
-
-function profitColor(val: number | null | undefined): string {
-  if (val == null) return ''
-  if (val > 0) return 'profit-positive'
-  if (val < 0) return 'profit-negative'
-  return ''
-}
+const fmt = (v: number | null | undefined, d = 2): string => _fmt(v, d)
 </script>
 
 <template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { toWan } from '@/utils/format'
+import { fmt as _fmt, profitColor, toWan } from '@/utils/format'
 
 const props = defineProps<{
   exposures: Record<string, number>
@@ -15,26 +15,14 @@ const items = computed(() =>
   })),
 )
 
-function fmt(val: number | null | undefined, decimals = 2): string {
-  if (val == null) return '—'
-  return val.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
-
-function exposureColor(val: number): string {
-  if (val > 0) return 'profit-positive'
-  if (val < 0) return 'profit-negative'
-  return ''
-}
+const fmt = (v: number | null | undefined, d = 2): string => _fmt(v, d)
 </script>
 
 <template>
   <div class="greeks-summary">
     <div v-for="item in items" :key="item.ccy" class="greek-card">
       <span class="greek-label">{{ item.ccy }} 敞口 (万)</span>
-      <span class="greek-value" :class="exposureColor(item.exposure)">
+      <span class="greek-value" :class="profitColor(item.exposure)">
         {{ fmt(toWan(item.exposure)) }}
       </span>
     </div>

@@ -26,8 +26,12 @@ export const useUiStore = defineStore('ui', () => {
     notifications.value = notifications.value.filter(n => n.id !== id)
   }
 
+  function notifyError(e: unknown, fallback: string) {
+    addNotification('error', e instanceof Error ? e.message : fallback)
+  }
+
   return {
     sidebarCollapsed, globalLoading, notifications,
-    toggleSidebar, setLoading, addNotification, removeNotification,
+    toggleSidebar, setLoading, addNotification, removeNotification, notifyError,
   }
 })

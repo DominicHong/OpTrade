@@ -1,14 +1,9 @@
 import apiClient from './client'
 import type { ImportConfirmResponse, ImportHistoryItem } from '@/types/api'
+import { uploadFile as postFile } from './upload'
 
 export async function uploadFile(file: File): Promise<ImportConfirmResponse> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await apiClient.post('/imports/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
-  })
-  return data
+  return postFile<ImportConfirmResponse>('/imports/upload', file)
 }
 
 export async function getImportHistory(): Promise<ImportHistoryItem[]> {

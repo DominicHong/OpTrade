@@ -1,34 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CcyPairOptionMetrics } from '@/types/portfolio'
-import { toWan } from '@/utils/format'
+import { fmt as _fmt, profitColor, toWan } from '@/utils/format'
 
 const props = defineProps<{
   metrics: CcyPairOptionMetrics[]
 }>()
 
-function fmt(val: number | null | undefined, decimals = 2): string {
-  if (val == null) return '—'
-  return val.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
-
-function fmtGreek(val: number | null | undefined, decimals = 2): string {
-  if (val == null) return '—'
-  return val.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
-
-function profitColor(val: number | null | undefined): string {
-  if (val == null) return ''
-  if (val > 0) return 'profit-positive'
-  if (val < 0) return 'profit-negative'
-  return ''
-}
+const fmt = (v: number | null | undefined, d = 2): string => _fmt(v, d)
 
 // Zero-value filter: hide pairs where ALL 6 indicators (after toWan scaling)
 // are within ±0.0001 in 万 units (i.e. ±1 in original currency units).
@@ -94,8 +73,8 @@ const summary = computed(() => {
           <td :class="profitColor(m.total_option_pnl_cny)">
             {{ fmt(toWan(m.total_option_pnl_cny)) }}
           </td>
-          <td>{{ fmtGreek(m.delta) }}</td>
-          <td>{{ fmtGreek(m.gamma) }}</td>
+          <td>{{ fmt(m.delta) }}</td>
+          <td>{{ fmt(m.gamma) }}</td>
         </tr>
         <!-- Summary row -->
         <tr class="summary-row">

@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { uploadFile } from './upload'
 import type {
   CurveDefinition,
   CurveCoverageSummary,
@@ -49,11 +50,5 @@ export async function triggerRefresh(): Promise<CrawlResult> {
 }
 
 export async function uploadFxImpliedXlsx(file: File): Promise<UploadResult> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await apiClient.post('/curves/fx-implied-rates/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60_000,
-  })
-  return data
+  return uploadFile<UploadResult>('/curves/fx-implied-rates/upload', file)
 }

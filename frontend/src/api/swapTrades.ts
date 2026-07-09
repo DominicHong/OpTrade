@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { uploadFile } from './upload'
 import type {
   SwapTrade,
   SwapTradeCreate,
@@ -45,13 +46,7 @@ export async function batchDeleteSwapTrades(
 }
 
 export async function uploadSwapFile(file: File): Promise<ImportConfirmResponse> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await apiClient.post('/imports/swap/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
-  })
-  return data
+  return uploadFile<ImportConfirmResponse>('/imports/swap/upload', file)
 }
 
 export async function getSwapColumnMapping(): Promise<{

@@ -1,29 +1,10 @@
 <script setup lang="ts">
 import type { PortfolioGreeksResponse } from '@/types/portfolio'
-import { toWan } from '@/utils/format'
+import { fmt, isCall, profitColor, toWan } from '@/utils/format'
 
 defineProps<{
   result: PortfolioGreeksResponse
 }>()
-
-function fmt(val: number | null | undefined, decimals = 4): string {
-  if (val == null) return '—'
-  return val.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-}
-
-function profitColor(val: number | null | undefined): string {
-  if (val == null) return ''
-  if (val > 0) return 'profit-positive'
-  if (val < 0) return 'profit-negative'
-  return ''
-}
-
-function isCall(optionType: string | null | undefined): boolean {
-  return !!optionType && optionType.toUpperCase() === 'CALL'
-}
 </script>
 
 <template>

@@ -86,7 +86,7 @@ async function handleImportFromCurve() {
     const result = await store.importForDate(importDate.value)
     ui.addNotification('success', result.message)
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '导入失败')
+    ui.notifyError(e, '导入失败')
   }
 }
 
@@ -99,7 +99,7 @@ async function handleImportAllDates() {
     const result = await store.importAllDates()
     ui.addNotification('success', result.message)
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '批量导入失败')
+    ui.notifyError(e, '批量导入失败')
   }
 }
 
@@ -123,7 +123,7 @@ async function handleExport() {
     window.URL.revokeObjectURL(url)
     ui.addNotification('success', '汇率数据导出成功')
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '导出失败')
+    ui.notifyError(e, '导出失败')
   }
 }
 
@@ -147,7 +147,7 @@ async function handleFileChange(event: Event) {
     ui.addNotification('success', result.message || `导入成功：新增 ${result.records_added} 条`)
     await Promise.all([store.loadRates(), store.loadCoverage()])
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '上传失败')
+    ui.notifyError(e, '上传失败')
   } finally {
     uploading.value = false
   }
@@ -171,7 +171,7 @@ async function handleManualSubmit() {
       source_ref: null,
     }
   } catch (e) {
-    ui.addNotification('error', e instanceof Error ? e.message : '保存失败')
+    ui.notifyError(e, '保存失败')
   } finally {
     submittingManual.value = false
   }

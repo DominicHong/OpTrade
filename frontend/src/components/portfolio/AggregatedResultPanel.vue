@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AggregatedAnalysisResponse } from '@/types/portfolio'
+import { fmtDate } from '@/utils/format'
 import OptionRiskMetricsTable from './OptionRiskMetricsTable.vue'
 import PortfolioPnlSummary from './PortfolioPnlSummary.vue'
 import CurrencyExposureGrid from './CurrencyExposureGrid.vue'
@@ -10,11 +11,6 @@ import SwapDetailTable from './SwapDetailTable.vue'
 const props = defineProps<{
   result: AggregatedAnalysisResponse
 }>()
-
-function fmtDate(val: string | null | undefined): string {
-  if (!val) return '—'
-  return val
-}
 
 const hasAnyTrade = (): boolean =>
   props.result.option_trades.length > 0

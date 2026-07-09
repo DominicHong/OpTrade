@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { uploadFile } from './upload'
 import type {
   ExchangeRate,
   ExchangeRateCoverageSummary,
@@ -52,11 +53,5 @@ export async function createManualRate(payload: ExchangeRateManualCreate): Promi
 }
 
 export async function uploadExchangeRatesCsv(file: File): Promise<ExchangeRateUploadResult> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await apiClient.post('/exchange-rates/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60_000,
-  })
-  return data
+  return uploadFile<ExchangeRateUploadResult>('/exchange-rates/upload', file)
 }
