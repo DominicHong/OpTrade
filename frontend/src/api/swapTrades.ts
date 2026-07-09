@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { createCrudApi } from './_crud'
 import { uploadFile } from './upload'
 import type {
   SwapTrade,
@@ -9,41 +10,20 @@ import type {
 } from '@/types/swapTrade'
 import type { ImportConfirmResponse } from '@/types/api'
 
-export async function fetchSwapTrades(
-  params: SwapTradeFilterParams = {}
-): Promise<SwapTradeListResponse> {
-  const { data } = await apiClient.get('/swap-trades', { params })
-  return data
-}
+const crud = createCrudApi<
+  SwapTrade,
+  SwapTradeCreate,
+  SwapTradeUpdate,
+  SwapTradeFilterParams,
+  SwapTradeListResponse
+>('/swap-trades')
 
-export async function fetchSwapTrade(id: number): Promise<SwapTrade> {
-  const { data } = await apiClient.get(`/swap-trades/${id}`)
-  return data
-}
-
-export async function createSwapTrade(payload: SwapTradeCreate): Promise<SwapTrade> {
-  const { data } = await apiClient.post('/swap-trades', payload)
-  return data
-}
-
-export async function updateSwapTrade(
-  id: number,
-  payload: SwapTradeUpdate
-): Promise<SwapTrade> {
-  const { data } = await apiClient.put(`/swap-trades/${id}`, payload)
-  return data
-}
-
-export async function deleteSwapTrade(id: number): Promise<void> {
-  await apiClient.delete(`/swap-trades/${id}`)
-}
-
-export async function batchDeleteSwapTrades(
-  ids: number[]
-): Promise<{ status: string; count: string }> {
-  const { data } = await apiClient.post('/swap-trades/batch-delete', { ids })
-  return data
-}
+export const fetchSwapTrades = crud.fetchList
+export const fetchSwapTrade = crud.fetchOne
+export const createSwapTrade = crud.create
+export const updateSwapTrade = crud.update
+export const deleteSwapTrade = crud.remove
+export const batchDeleteSwapTrades = crud.batchDelete
 
 export async function uploadSwapFile(file: File): Promise<ImportConfirmResponse> {
   return uploadFile<ImportConfirmResponse>('/imports/swap/upload', file)
