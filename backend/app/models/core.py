@@ -18,7 +18,6 @@ from datetime import date, datetime
 from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
-from app.utils.ccy_utils import split_ccy_pair
 from app.utils.date_utils import utc_now
 
 
@@ -232,18 +231,6 @@ class OptionTrade(SQLModel, table=True):
     def validate_premium_type(cls, v: str | None) -> str | None:
         if v is not None and v not in ("Pips", "%"):
             raise ValueError("premium_type must be 'Pips' or '%'")
-        return v
-
-    @field_validator("premium_currency")
-    @classmethod
-    def validate_premium_currency(cls, v: str | None, info) -> str | None:
-        if v is None:
-            return v
-        ccy_pair = info.data.get("ccy_pair")
-        if ccy_pair:
-            ccy1, ccy2 = split_ccy_pair(ccy_pair)
-            if ccy1 and ccy2 and v not in (ccy1, ccy2):
-                raise ValueError("premium_currency must be one of the currencies in ccy_pair")
         return v
 
 

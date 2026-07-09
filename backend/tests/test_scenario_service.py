@@ -30,7 +30,7 @@ class TestSpotShift:
             base_spot=6.80, strike=6.80, base_vol=0.10,
             time_to_expiry_years=1.0, rf_rate_base=0.03, rf_rate_quote=0.03,
         )
-        assert len(results) == 7  # default shifts
+        assert len(results) == 9  # default shifts (aligned with frontend)
 
 
 class TestVolShift:
@@ -65,7 +65,7 @@ class TestTimeDecay:
         )
         # At t=0, the option has more value than at later dates
         assert results[0]["days_forward"] == 0
-        assert len(results) == 5
+        assert len(results) == 6  # default horizons (aligned with frontend)
 
 
 class TestHeatmap:

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment / .env file."""
 
     app_name: str = "OpTrade"
-    app_version: str = "0.3.0"
+    app_version: str = "0.3.1"
     debug: bool = False
 
     # Database — absolute path under project root so it is consistent regardless of CWD
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # Frontend (for PyWebView)
-    frontend_dev_url: str = "http://localhost:5173"
+    frontend_dev_url: str = "http://localhost:3000"
     frontend_dist_dir: str = ""
 
     # File paths

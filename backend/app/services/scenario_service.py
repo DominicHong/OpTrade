@@ -39,7 +39,7 @@ class ScenarioService:
                          where -500 means spot × (1 - 500/10000) = spot × 0.95
         """
         if shifts_bps is None:
-            shifts_bps = [-500, -200, -100, 0, 100, 200, 500]
+            shifts_bps = [-500, -200, -100, -50, 0, 50, 100, 200, 500]
 
         results: list[dict] = []
         for shift_bp in shifts_bps:
@@ -126,7 +126,7 @@ class ScenarioService:
             days_forward: Days to step forward (e.g., [0, 7, 30, 60, 90])
         """
         if days_forward is None:
-            days_forward = [0, 7, 30, 60, 90]
+            days_forward = [0, 7, 14, 30, 60, 90]
 
         results: list[dict] = []
         for days in days_forward:
@@ -177,7 +177,7 @@ class ScenarioService:
             }
         """
         if spot_shifts is None:
-            spot_shifts = [-500, -200, -100, 0, 100, 200, 500]
+            spot_shifts = [-500, -200, -100, -50, 0, 50, 100, 200, 500]
         if vol_shifts is None:
             vol_shifts = [-0.05, -0.02, -0.01, 0, 0.01, 0.02, 0.05]
 

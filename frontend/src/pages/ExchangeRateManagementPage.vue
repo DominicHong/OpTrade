@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/uiStore'
 import DataTable from '@/components/shared/DataTable.vue'
 import { exportExchangeRates, uploadExchangeRatesCsv, createManualRate } from '@/api/exchangeRates'
 import { formatBeijingTime } from '@/utils/format'
+import { SUPPORTED_CCY_PAIRS } from '@/types/exchangeRate'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { ExchangeRateManualCreate } from '@/types/exchangeRate'
 
@@ -311,7 +312,7 @@ onMounted(() => {
         <div class="filter-group">
           <label>货币对</label>
           <select v-model="manualForm.ccy_pair" class="filter-select">
-            <option v-for="p in ['USD/CNY','EUR/CNY','HKD/CNY','GBP/CNY','JPY/CNY','USD/HKD','USD/JPY','EUR/USD','GBP/USD']" :key="p" :value="p">
+            <option v-for="p in SUPPORTED_CCY_PAIRS" :key="p" :value="p">
               {{ p }}
             </option>
           </select>
@@ -348,7 +349,7 @@ onMounted(() => {
           <label for="filter-pair">货币对</label>
           <select id="filter-pair" v-model="filterCcyPair" class="filter-select">
             <option value="">全部</option>
-            <option v-for="p in (store.coverage?.ccy_pairs ?? ['USD/CNY','EUR/CNY','HKD/CNY','GBP/CNY','JPY/CNY','USD/HKD','USD/JPY','EUR/USD','GBP/USD'])" :key="p" :value="p">
+            <option v-for="p in (store.coverage?.ccy_pairs ?? SUPPORTED_CCY_PAIRS)" :key="p" :value="p">
               {{ p }}
             </option>
           </select>
