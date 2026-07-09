@@ -12,6 +12,8 @@ import DataTable from '@/components/shared/DataTable.vue'
 import SearchInput from '@/components/shared/SearchInput.vue'
 import NumberDisplay from '@/components/shared/NumberDisplay.vue'
 import LoadingSpinner from '@/components/shared/LoadingSpinner.vue'
+import BatchDeleteConfirm from '@/components/shared/BatchDeleteConfirm.vue'
+import ServerPagination from '@/components/shared/ServerPagination.vue'
 import PortfolioAutocomplete from '@/components/trade/PortfolioAutocomplete.vue'
 import type { TableColumn } from '@/components/shared/DataTable.vue'
 import type { OptionTrade, OptionTradeCreate, OptionTradeUpdate } from '@/types/optionTrade'
@@ -20,6 +22,7 @@ import type { SwapTrade, SwapTradeCreate, SwapTradeUpdate } from '@/types/swapTr
 import type { ImportConfirmResponse } from '@/types/api'
 import { formatDate, toWan } from '@/utils/format'
 import { useModalGuard } from '@/composables/useModalGuard'
+import { useTradeFormModal } from '@/composables/useTradeFormModal'
 
 const router = useRouter()
 const store = useOptionTradeStore()
@@ -42,23 +45,7 @@ const columnMapping = ref<Record<string, string>>({})
 const spotColumnMapping = ref<Record<string, string>>({})
 const swapColumnMapping = ref<Record<string, string>>({})
 
-// --- Trade form modal ---
-const showModal = ref(false)
-const modalMode = ref<'create' | 'edit'>('create')
-const formError = ref<string | null>(null)
-const formLoading = ref(false)
-
-// Track which premium field the user is actively editing
-const premiumEditingField = ref<'rate' | 'amount' | null>(null)
-
-// --- Spot trade form modal ---
-const showSpotModal = ref(false)
-const spotModalMode = ref<'create' | 'edit'>('create')
-const spotFormError = ref<string | null>(null)
-const spotFormLoading = ref(false)
-const spotEditingId = ref<number | null>(null)
-const spotFormPortfolioId = ref<number | null>(null)
-
+// --- Spot trade form modal (via composable) ---
 const emptySpotForm: SpotTradeCreate = {
   trade_id: '',
   ccy_pair: 'USD/CNY',
@@ -75,16 +62,53 @@ const emptySpotForm: SpotTradeCreate = {
   venue: null,
 }
 
-const spotForm = ref<SpotTradeCreate | SpotTradeUpdate>({ ...emptySpotForm })
+const {
+  showModal: showSpotModal, modalMode: spotModalMode, formError: spotFormError, formLoading: spotFormLoading,
+  formPortfolioId: spotFormPortfolioId, form: spotForm, openCreate: openSpotCreateBase, openEdit: openSpotEditBase,
+  submit: submitSpotBase,
+} = useTradeFormModal<SpotTradeCreate | SpotTradeUpdate>(emptySpotForm)
 
-// --- Swap trade form modal ---
-const showSwapModal = ref(false)
-const swapModalMode = ref<'create' | 'edit'>('create')
-const swapFormError = ref<string | null>(null)
-const swapFormLoading = ref(false)
-const swapEditingId = ref<number | null>(null)
-const swapFormPortfolioId = ref<number | null>(null)
+function openSpotCreateModal() {
+  openSpotCreateBase()
+}
 
+function openSpotEditModal(trade: SpotTrade) {
+  openSpotEditBase(trade.id, trade.portfolio_id ?? null, {
+    trade_id: trade.trade_id,
+    ccy_pair: trade.ccy_pair,
+    direction: trade.direction,
+    event_type: trade.event_type,
+    deal_price: trade.deal_price,
+    ccy1_amount: trade.ccy1_amount,
+    ccy2_amount: trade.ccy2_amount,
+    trade_date: trade.trade_date,
+    settlement_date: trade.settlement_date,
+    counterparty_name: trade.counterparty_name,
+    portfolio_name: trade.portfolio_name,
+    source: trade.source,
+    venue: trade.venue,
+  })
+}
+
+async function submitSpotForm() {
+  await submitSpotBase(
+    spotStore,
+    (f) => f,
+    ui.addNotification,
+    { create: '即期交易创建成功', update: '即期交易更新成功', fail: '操作失败' },
+  )
+}
+
+async function deleteSpotTrade(trade: SpotTrade) {
+  try {
+    await spotStore.removeTrade(trade.id)
+    ui.addNotification('success', '即期交易已删除')
+  } catch (e: unknown) {
+    ui.notifyError(e, '删除失败')
+  }
+}
+
+// --- Swap trade form modal (via composable) ---
 const emptySwapForm: SwapTradeCreate = {
   trade_id: '',
   ccy_pair: 'USD/CNY',
@@ -107,7 +131,79 @@ const emptySwapForm: SwapTradeCreate = {
   comments: null,
 }
 
-const swapForm = ref<SwapTradeCreate | SwapTradeUpdate>({ ...emptySwapForm })
+const {
+  showModal: showSwapModal, modalMode: swapModalMode, formError: swapFormError, formLoading: swapFormLoading,
+  formPortfolioId: swapFormPortfolioId, form: swapForm, openCreate: openSwapCreateBase, openEdit: openSwapEditBase,
+  submit: submitSwapBase,
+} = useTradeFormModal<SwapTradeCreate | SwapTradeUpdate>(emptySwapForm)
+
+function openSwapCreateModal() {
+  openSwapCreateBase()
+}
+
+function openSwapEditModal(trade: SwapTrade) {
+  openSwapEditBase(trade.id, trade.portfolio_id ?? null, {
+    trade_id: trade.trade_id,
+    ccy_pair: trade.ccy_pair,
+    direction: trade.direction,
+    swap_type: trade.swap_type,
+    event_type: trade.event_type,
+    tenor: trade.tenor,
+    spread: trade.spread,
+    spot_value_date: trade.spot_value_date,
+    spot_rate: trade.spot_rate,
+    near_value_date: trade.near_value_date,
+    near_tenor: trade.near_tenor,
+    near_swap_points: trade.near_swap_points,
+    near_deal_price: trade.near_deal_price,
+    near_trade_ccy: trade.near_trade_ccy,
+    near_ccy1_amount: trade.near_ccy1_amount,
+    near_ccy2_amount: trade.near_ccy2_amount,
+    near_settlement_status: trade.near_settlement_status,
+    far_value_date: trade.far_value_date,
+    far_tenor: trade.far_tenor,
+    far_swap_points: trade.far_swap_points,
+    far_deal_price: trade.far_deal_price,
+    far_trade_ccy: trade.far_trade_ccy,
+    far_ccy1_amount: trade.far_ccy1_amount,
+    far_ccy2_amount: trade.far_ccy2_amount,
+    far_settlement_status: trade.far_settlement_status,
+    trade_date: trade.trade_date,
+    counterparty_name: trade.counterparty_name,
+    portfolio_name: trade.portfolio_name,
+    our_trader: trade.our_trader,
+    venue: trade.venue,
+    source: trade.source,
+    comments: trade.comments,
+  })
+}
+
+async function submitSwapForm() {
+  await submitSwapBase(
+    swapStore,
+    (f) => f,
+    ui.addNotification,
+    { create: '掉期交易创建成功', update: '掉期交易更新成功', fail: '操作失败' },
+  )
+}
+
+async function deleteSwapTrade(trade: SwapTrade) {
+  try {
+    await swapStore.removeTrade(trade.id)
+    ui.addNotification('success', '掉期交易已删除')
+  } catch (e: unknown) {
+    ui.notifyError(e, '删除失败')
+  }
+}
+
+// --- Option trade form modal (manual — has premium calc coupling) ---
+const showModal = ref(false)
+const modalMode = ref<'create' | 'edit'>('create')
+const formError = ref<string | null>(null)
+const formLoading = ref(false)
+
+// Track which premium field the user is actively editing
+const premiumEditingField = ref<'rate' | 'amount' | null>(null)
 
 const emptyForm: OptionTradeCreate = {
   trade_id: '',
@@ -523,151 +619,6 @@ async function submitForm() {
   }
 }
 
-// --- Spot trade CRUD ---
-function openSpotCreateModal() {
-  spotModalMode.value = 'create'
-  spotForm.value = { ...emptySpotForm }
-  spotEditingId.value = null
-  spotFormPortfolioId.value = null
-  spotFormError.value = null
-  showSpotModal.value = true
-}
-
-function openSpotEditModal(trade: SpotTrade) {
-  spotModalMode.value = 'edit'
-  spotEditingId.value = trade.id
-  spotFormPortfolioId.value = trade.portfolio_id
-  spotForm.value = {
-    trade_id: trade.trade_id,
-    ccy_pair: trade.ccy_pair,
-    direction: trade.direction,
-    event_type: trade.event_type,
-    deal_price: trade.deal_price,
-    ccy1_amount: trade.ccy1_amount,
-    ccy2_amount: trade.ccy2_amount,
-    trade_date: trade.trade_date,
-    settlement_date: trade.settlement_date,
-    counterparty_name: trade.counterparty_name,
-    portfolio_name: trade.portfolio_name,
-    source: trade.source,
-    venue: trade.venue,
-  }
-  spotFormError.value = null
-  showSpotModal.value = true
-}
-
-async function submitSpotForm() {
-  spotFormLoading.value = true
-  spotFormError.value = null
-  const payload = { ...spotForm.value, portfolio_id: spotFormPortfolioId.value }
-  try {
-    if (spotModalMode.value === 'create') {
-      await spotStore.addTrade(payload as SpotTradeCreate)
-      ui.addNotification('success', '即期交易创建成功')
-    } else if (spotEditingId.value) {
-      await spotStore.saveTrade(spotEditingId.value, payload as SpotTradeUpdate)
-      ui.addNotification('success', '即期交易更新成功')
-    }
-    showSpotModal.value = false
-    spotStore.loadTrades()
-  } catch (e: unknown) {
-    spotFormError.value = e instanceof Error ? e.message : '操作失败'
-  } finally {
-    spotFormLoading.value = false
-  }
-}
-
-async function deleteSpotTrade(trade: SpotTrade) {
-  try {
-    await spotStore.removeTrade(trade.id)
-    ui.addNotification('success', '即期交易已删除')
-  } catch (e: unknown) {
-    ui.notifyError(e, '删除失败')
-  }
-}
-
-// --- Swap trade CRUD ---
-function openSwapCreateModal() {
-  swapModalMode.value = 'create'
-  swapForm.value = { ...emptySwapForm }
-  swapEditingId.value = null
-  swapFormPortfolioId.value = null
-  swapFormError.value = null
-  showSwapModal.value = true
-}
-
-function openSwapEditModal(trade: SwapTrade) {
-  swapModalMode.value = 'edit'
-  swapEditingId.value = trade.id
-  swapFormPortfolioId.value = trade.portfolio_id
-  swapForm.value = {
-    trade_id: trade.trade_id,
-    ccy_pair: trade.ccy_pair,
-    direction: trade.direction,
-    swap_type: trade.swap_type,
-    event_type: trade.event_type,
-    tenor: trade.tenor,
-    spread: trade.spread,
-    spot_value_date: trade.spot_value_date,
-    spot_rate: trade.spot_rate,
-    near_value_date: trade.near_value_date,
-    near_tenor: trade.near_tenor,
-    near_swap_points: trade.near_swap_points,
-    near_deal_price: trade.near_deal_price,
-    near_trade_ccy: trade.near_trade_ccy,
-    near_ccy1_amount: trade.near_ccy1_amount,
-    near_ccy2_amount: trade.near_ccy2_amount,
-    near_settlement_status: trade.near_settlement_status,
-    far_value_date: trade.far_value_date,
-    far_tenor: trade.far_tenor,
-    far_swap_points: trade.far_swap_points,
-    far_deal_price: trade.far_deal_price,
-    far_trade_ccy: trade.far_trade_ccy,
-    far_ccy1_amount: trade.far_ccy1_amount,
-    far_ccy2_amount: trade.far_ccy2_amount,
-    far_settlement_status: trade.far_settlement_status,
-    trade_date: trade.trade_date,
-    counterparty_name: trade.counterparty_name,
-    portfolio_name: trade.portfolio_name,
-    our_trader: trade.our_trader,
-    venue: trade.venue,
-    source: trade.source,
-    comments: trade.comments,
-  }
-  swapFormError.value = null
-  showSwapModal.value = true
-}
-
-async function submitSwapForm() {
-  swapFormLoading.value = true
-  swapFormError.value = null
-  const payload = { ...swapForm.value, portfolio_id: swapFormPortfolioId.value }
-  try {
-    if (swapModalMode.value === 'create') {
-      await swapStore.addTrade(payload as SwapTradeCreate)
-      ui.addNotification('success', '掉期交易创建成功')
-    } else if (swapEditingId.value) {
-      await swapStore.saveTrade(swapEditingId.value, payload as SwapTradeUpdate)
-      ui.addNotification('success', '掉期交易更新成功')
-    }
-    showSwapModal.value = false
-    swapStore.loadTrades()
-  } catch (e: unknown) {
-    swapFormError.value = e instanceof Error ? e.message : '操作失败'
-  } finally {
-    swapFormLoading.value = false
-  }
-}
-
-async function deleteSwapTrade(trade: SwapTrade) {
-  try {
-    await swapStore.removeTrade(trade.id)
-    ui.addNotification('success', '掉期交易已删除')
-  } catch (e: unknown) {
-    ui.notifyError(e, '删除失败')
-  }
-}
-
 // --- Modal overlay click guard (prevents closing on drag from inside) ---
 const { onOverlayMousedown, onOverlayClick } = useModalGuard(showModal)
 const { onOverlayMousedown: onSpotOverlayMousedown, onOverlayClick: onSpotOverlayClick } = useModalGuard(showSpotModal)
@@ -767,17 +718,12 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
       </DataTable>
 
       <!-- Pagination -->
-      <div class="pagination" v-if="store.totalCount > 0">
-        <button class="page-btn" :disabled="store.filters.page === 1" @click="store.setPage((store.filters.page || 1) - 1)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          上一页
-        </button>
-        <span class="page-info">第 <strong>{{ store.filters.page }}</strong> / {{ totalPages() }} 页 <span class="page-total">(共 {{ store.totalCount }} 条)</span></span>
-        <button class="page-btn" :disabled="(store.filters.page || 1) >= totalPages()" @click="store.setPage((store.filters.page || 1) + 1)">
-          下一页
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-        </button>
-      </div>
+      <ServerPagination
+        :page="store.filters.page || 1"
+        :total-pages="totalPages()"
+        :total="store.totalCount"
+        @update:page="store.setPage($event)"
+      />
 
       <!-- Spot trades section -->
       <div class="section-divider">
@@ -853,17 +799,12 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
       </DataTable>
 
       <!-- Spot pagination -->
-      <div class="pagination" v-if="spotStore.totalCount > 0">
-        <button class="page-btn" :disabled="spotStore.filters.page === 1" @click="spotStore.setPage((spotStore.filters.page || 1) - 1)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          上一页
-        </button>
-        <span class="page-info">第 <strong>{{ spotStore.filters.page }}</strong> / {{ Math.ceil(spotStore.totalCount / (spotStore.filters.page_size || 50)) }} 页 <span class="page-total">(共 {{ spotStore.totalCount }} 条)</span></span>
-        <button class="page-btn" :disabled="(spotStore.filters.page || 1) >= Math.ceil(spotStore.totalCount / (spotStore.filters.page_size || 50))" @click="spotStore.setPage((spotStore.filters.page || 1) + 1)">
-          下一页
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-        </button>
-      </div>
+      <ServerPagination
+        :page="spotStore.filters.page || 1"
+        :total-pages="Math.ceil(spotStore.totalCount / (spotStore.filters.page_size || 50))"
+        :total="spotStore.totalCount"
+        @update:page="spotStore.setPage($event)"
+      />
 
       <!-- Swap trades section -->
       <div class="section-divider">
@@ -943,17 +884,12 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
       </DataTable>
 
       <!-- Swap pagination -->
-      <div class="pagination" v-if="swapStore.totalCount > 0">
-        <button class="page-btn" :disabled="swapStore.filters.page === 1" @click="swapStore.setPage((swapStore.filters.page || 1) - 1)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          上一页
-        </button>
-        <span class="page-info">第 <strong>{{ swapStore.filters.page }}</strong> / {{ Math.ceil(swapStore.totalCount / (swapStore.filters.page_size || 50)) }} 页 <span class="page-total">(共 {{ swapStore.totalCount }} 条)</span></span>
-        <button class="page-btn" :disabled="(swapStore.filters.page || 1) >= Math.ceil(swapStore.totalCount / (swapStore.filters.page_size || 50))" @click="swapStore.setPage((swapStore.filters.page || 1) + 1)">
-          下一页
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-        </button>
-      </div>
+      <ServerPagination
+        :page="swapStore.filters.page || 1"
+        :total-pages="Math.ceil(swapStore.totalCount / (swapStore.filters.page_size || 50))"
+        :total="swapStore.totalCount"
+        @update:page="swapStore.setPage($event)"
+      />
     </template>
 
     <!-- ==================== Tab: Import ==================== -->
@@ -1285,40 +1221,24 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
 
     <!-- ==================== Batch Delete Confirmation ==================== -->
     <Teleport to="body">
-      <div v-if="showBatchDeleteConfirm" class="modal-overlay" @click.self="cancelBatchDelete">
-        <div class="modal modal-sm">
-          <div class="modal-header">
-            <h3>确认批量删除</h3>
-            <button class="modal-close" @click="cancelBatchDelete">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p>确定要删除选中的 <strong>{{ selectedIds.length }}</strong> 条交易吗？此操作不可撤销。</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" @click="cancelBatchDelete">取消</button>
-            <button class="btn-danger" @click="doBatchDelete">删除</button>
-          </div>
-        </div>
-      </div>
+      <BatchDeleteConfirm
+        :show="showBatchDeleteConfirm"
+        :count="selectedIds.length"
+        label="交易"
+        @confirm="doBatchDelete"
+        @cancel="cancelBatchDelete"
+      />
     </Teleport>
 
     <!-- ==================== Spot Batch Delete Confirmation ==================== -->
     <Teleport to="body">
-      <div v-if="showSpotBatchDeleteConfirm" class="modal-overlay" @click.self="cancelSpotBatchDelete">
-        <div class="modal modal-sm">
-          <div class="modal-header">
-            <h3>确认批量删除</h3>
-            <button class="modal-close" @click="cancelSpotBatchDelete">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p>确定要删除选中的 <strong>{{ spotSelectedIds.length }}</strong> 条即期交易吗？此操作不可撤销。</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" @click="cancelSpotBatchDelete">取消</button>
-            <button class="btn-danger" @click="doSpotBatchDelete">删除</button>
-          </div>
-        </div>
-      </div>
+      <BatchDeleteConfirm
+        :show="showSpotBatchDeleteConfirm"
+        :count="spotSelectedIds.length"
+        label="即期交易"
+        @confirm="doSpotBatchDelete"
+        @cancel="cancelSpotBatchDelete"
+      />
     </Teleport>
 
     <!-- ==================== Swap Trade Form Modal ==================== -->
@@ -1429,21 +1349,13 @@ const totalPages = () => Math.ceil(store.totalCount / (store.filters.page_size |
 
     <!-- ==================== Swap Batch Delete Confirmation ==================== -->
     <Teleport to="body">
-      <div v-if="showSwapBatchDeleteConfirm" class="modal-overlay" @click.self="cancelSwapBatchDelete">
-        <div class="modal modal-sm">
-          <div class="modal-header">
-            <h3>确认批量删除</h3>
-            <button class="modal-close" @click="cancelSwapBatchDelete">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p>确定要删除选中的 <strong>{{ swapSelectedIds.length }}</strong> 条掉期交易吗？此操作不可撤销。</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" @click="cancelSwapBatchDelete">取消</button>
-            <button class="btn-danger" @click="doSwapBatchDelete">删除</button>
-          </div>
-        </div>
-      </div>
+      <BatchDeleteConfirm
+        :show="showSwapBatchDeleteConfirm"
+        :count="swapSelectedIds.length"
+        label="掉期交易"
+        @confirm="doSwapBatchDelete"
+        @cancel="cancelSwapBatchDelete"
+      />
     </Teleport>
   </div>
 </template>
