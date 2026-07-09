@@ -14,15 +14,13 @@ Import endpoints at /api/v1/imports/spot:
   GET    /columns       — get spot column mapping reference
 """
 
-import os
-import tempfile
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlmodel import Session, select, func
 
 from app.database import get_session
-from app.models import ImportLog, SpotTrade
+from app.models import SpotTrade
 from app.routers._crud import (
     CrudConfig,
     apply_to_both,
@@ -31,15 +29,16 @@ from app.routers._crud import (
     derive_ccy_if_missing,
     derive_ccy_if_pair_changed,
 )
-from app.schemas.import_ import ImportConfirmResponse, ImportParsedRow
+from app.schemas.import_ import ImportConfirmResponse
 from app.schemas.spot_trade import (
     SpotTradeCreate,
     SpotTradeListResponse,
     SpotTradeRead,
     SpotTradeUpdate,
 )
+from app.services.import_pipeline import column_mapping_response, run_upload
 from app.services.spot_import_service import spot_import_service
-from app.utils.date_utils import utc_now
+from app.utils.spot_column_mapping import CSV_TO_SPOT_FIELD
 
 # ── CRUD Router ──────────────────────────────────────────────────────────────────
 
@@ -137,94 +136,14 @@ async def upload_spot_excel(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ) -> ImportConfirmResponse:
-    """
-    Upload a spot trade Excel file, parse, validate, and import into database.
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
-
-    suffix = os.path.splitext(file.filename)[1] or ".xls"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        # Phase 1: Parse
-        parsed = spot_import_service.parse_file(tmp_path)
-
-        # Phase 2: Validate
-        validated = spot_import_service.validate(parsed)
-
-        # Create initial import log
-        import_log = ImportLog(
-            filename=file.filename,
-            file_hash=parsed.file_hash,
-            total_rows=parsed.total_rows,
-            status="validated",
-            started_at=utc_now(),
-            completed_at=utc_now(),
-            import_type="spot",
-        )
-        session.add(import_log)
-        session.commit()
-        session.refresh(import_log)
-
-        # Note: validation errors are returned inline in the response `errors` field
-
-        # Phase 3: Execute import
-        import_log = spot_import_service.execute_import(
-            parsed, validated, import_log, session
-        )
-
-        # Build parsed rows for preview
-        preview_rows: list[ImportParsedRow] = []
-        row_count = min(len(parsed.rows), 100)
-        for i in range(row_count):
-            row = parsed.rows[i]
-            trade_id = row.get("成交编号", "") or row.get("trade_id", "")
-            row_errors: list[str] = []
-            for err in validated.errors:
-                if err.row_number == i + 3:
-                    row_errors.append(err.message)
-            preview_rows.append(
-                ImportParsedRow(
-                    row_number=i + 3,
-                    trade_id=trade_id if trade_id else None,
-                    data=row,
-                    errors=row_errors,
-                )
-            )
-
-        return ImportConfirmResponse(
-            import_log_id=import_log.id,
-            filename=file.filename,
-            total_rows=import_log.total_rows,
-            imported_rows=import_log.imported_rows,
-            skipped_rows=import_log.skipped_rows,
-            error_rows=import_log.error_rows,
-            status=import_log.status,
-            errors=[e.to_dict() for e in validated.errors[:50]],
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
-
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    """Upload a spot trade Excel file, parse, validate, and import into database."""
+    return await run_upload(
+        file, spot_import_service, session,
+        import_type="spot", default_suffix=".xls",
+    )
 
 
 @import_router.get("/columns")
 def get_spot_column_mapping() -> dict:
     """Get the expected column mapping reference for spot trade ComStar exports."""
-    from app.utils.spot_column_mapping import CSV_TO_SPOT_FIELD
-
-    return {
-        "mapping": CSV_TO_SPOT_FIELD,
-        "total_columns": len(CSV_TO_SPOT_FIELD),
-    }
+    return column_mapping_response(CSV_TO_SPOT_FIELD)

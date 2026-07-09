@@ -5,9 +5,6 @@ Single-step flow:
   POST /upload  — Parse, validate, and persist trades to database
 """
 
-import os
-import tempfile
-
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session, select
 
@@ -16,9 +13,10 @@ from app.models import ImportLog
 from app.schemas.import_ import (
     ImportConfirmResponse,
     ImportHistoryItem,
-    ImportParsedRow,
 )
+from app.services.import_pipeline import column_mapping_response, run_upload
 from app.services.import_service import import_service
+from app.utils.column_mapping import CSV_TO_OPTION_TRADE_FIELD
 from app.utils.date_utils import utc_now
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
@@ -29,88 +27,11 @@ async def upload_excel(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ) -> ImportConfirmResponse:
-    """
-    Upload an Excel/CSV file, parse, validate, and import into database.
-
-    Full pipeline: Parse → Validate → Execute Import → Return results.
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
-
-    # Save uploaded file to temp location
-    suffix = os.path.splitext(file.filename)[1] or ".csv"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        # Phase 1: Parse
-        parsed = import_service.parse_file(tmp_path)
-
-        # Phase 2: Validate
-        validated = import_service.validate(parsed)
-
-        # Create initial import log
-        import_log = ImportLog(
-            filename=file.filename,
-            file_hash=parsed.file_hash,
-            total_rows=parsed.total_rows,
-            status="validated",
-            started_at=utc_now(),
-            completed_at=utc_now(),
-        )
-        session.add(import_log)
-        session.commit()
-        session.refresh(import_log)
-
-        # Note: validation errors are returned inline in the response `errors` field
-
-        # Phase 3: Execute import — persist validated rows to database
-        import_log = import_service.execute_import(
-            parsed, validated, import_log, session
-        )
-
-        # Build parsed rows for preview (limit to first 100)
-        preview_rows: list[ImportParsedRow] = []
-        for i in range(min(len(parsed.rows), 100)):
-            row = parsed.rows[i]
-            trade_id = row.get("成交编号", "") or row.get("trade_id", "")
-            errors: list[str] = []
-            for err in validated.errors:
-                if err.row_number == i + 3:
-                    errors.append(err.message)
-            preview_rows.append(
-                ImportParsedRow(
-                    row_number=i + 3,
-                    trade_id=trade_id if trade_id else None,
-                    data=row,
-                    errors=errors,
-                )
-            )
-
-        return ImportConfirmResponse(
-            import_log_id=import_log.id,
-            filename=file.filename,
-            total_rows=import_log.total_rows,
-            imported_rows=import_log.imported_rows,
-            skipped_rows=import_log.skipped_rows,
-            error_rows=import_log.error_rows,
-            status=import_log.status,
-            errors=[e.to_dict() for e in validated.errors[:50]],
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
-
-    finally:
-        # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    """Upload an Excel/CSV file, parse, validate, and import into database."""
+    return await run_upload(
+        file, import_service, session,
+        import_type="option", default_suffix=".csv",
+    )
 
 
 @router.post("/confirm", response_model=ImportConfirmResponse)
@@ -164,12 +85,7 @@ def confirm_import(
 @router.get("/columns")
 def get_column_mapping() -> dict:
     """Get the expected column mapping reference for COMSTAR exports."""
-    from app.utils.column_mapping import CSV_TO_OPTION_TRADE_FIELD
-
-    return {
-        "mapping": CSV_TO_OPTION_TRADE_FIELD,
-        "total_columns": len(CSV_TO_OPTION_TRADE_FIELD),
-    }
+    return column_mapping_response(CSV_TO_OPTION_TRADE_FIELD)
 
 
 @router.get("/history", response_model=list[ImportHistoryItem])
