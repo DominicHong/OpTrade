@@ -179,6 +179,4 @@ const summary = computed(() => {
   border: 1px dashed var(--color-border);
   border-radius: var(--radius);
 }
-.profit-positive { color: #059669; }
-.profit-negative { color: #ef4444; }
 </style>

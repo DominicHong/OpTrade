@@ -1,21 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import type { OptionTradeAnalysisDetail } from '@/types/portfolio'
+import PaginationControls from '@/components/shared/PaginationControls.vue'
+import { useClientPagination } from '@/composables/useClientPagination'
 import { fmt, fmtDate, isCall, profitColor, toWan } from '@/utils/format'
 
 const props = defineProps<{
   trades: OptionTradeAnalysisDetail[]
 }>()
 
-const page = ref(1)
-const pageSize = 10
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(props.trades.length / pageSize)),
-)
-const pagedTrades = computed(() => {
-  const start = (page.value - 1) * pageSize
-  return props.trades.slice(start, start + pageSize)
-})
+const { page, totalPages, pagedItems: pagedTrades } = useClientPagination(() => props.trades)
 
 function exerciseStatusClass(status: string | null | undefined): string {
   if (!status) return ''
@@ -94,13 +87,7 @@ function exerciseStatusClass(status: string | null | undefined): string {
       </table>
     </div>
 
-    <div v-if="totalPages > 1" class="pagination">
-      <button class="page-btn" :disabled="page <= 1" @click="page = 1">«</button>
-      <button class="page-btn" :disabled="page <= 1" @click="page--">‹</button>
-      <span class="page-info">{{ page }} / {{ totalPages }}</span>
-      <button class="page-btn" :disabled="page >= totalPages" @click="page++">›</button>
-      <button class="page-btn" :disabled="page >= totalPages" @click="page = totalPages">»</button>
-    </div>
+    <PaginationControls v-model:page="page" :total-pages="totalPages" />
   </div>
 </template>
 
@@ -185,37 +172,4 @@ function exerciseStatusClass(status: string | null | undefined): string {
   background: #dbeafe;
   color: #1e40af;
 }
-
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  margin-top: 0.75rem;
-}
-.page-btn {
-  padding: 0.25rem 0.55rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  color: var(--color-text);
-  cursor: pointer;
-  font-size: 0.75rem;
-  transition: all var(--transition-fast);
-}
-.page-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.page-info {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  padding: 0 0.5rem;
-}
-.profit-positive { color: #059669; }
-.profit-negative { color: #ef4444; }
 </style>

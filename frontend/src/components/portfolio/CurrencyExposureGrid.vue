@@ -57,6 +57,4 @@ const fmt = (v: number | null | undefined, d = 2): string => _fmt(v, d)
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.profit-positive { color: #059669; }
-.profit-negative { color: #ef4444; }
 </style>

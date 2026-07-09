@@ -118,8 +118,6 @@ defineProps<{
 .greek-gamma .greek-value { color: #7c3aed; }
 .greek-npv .greek-value { color: #059669; }
 .greek-profit .greek-value { color: #059669; }
-.profit-positive { color: #059669; }
-.profit-negative { color: #ef4444; }
 
 .table-wrap { overflow-x: auto; }
 .greeks-table {

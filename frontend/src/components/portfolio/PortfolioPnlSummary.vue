@@ -75,6 +75,4 @@ const fmt = (v: number | null | undefined, d = 2): string => _fmt(v, d)
 .greek-total-pnl .greek-value {
   font-size: 1.3rem;
 }
-.profit-positive { color: #059669; }
-.profit-negative { color: #ef4444; }
 </style>

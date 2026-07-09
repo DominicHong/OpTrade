@@ -1,0 +1,41 @@
+/* Shared utility classes used across multiple components and pages.
+ *
+ * These were previously duplicated as scoped <style> blocks in many .vue files.
+ * Imported once in main.ts so they apply globally.
+ */
+
+/* Profit / loss colour coding */
+.profit-positive { color: #059669; }
+.profit-negative { color: #ef4444; }
+
+/* Client-side pagination controls */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+.page-btn {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all var(--transition-fast);
+}
+.page-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.page-info {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  padding: 0 0.5rem;
+}
