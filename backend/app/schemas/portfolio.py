@@ -180,6 +180,8 @@ class CcyPairOptionMetrics(BaseModel):
     # (b) Greeks in original currency
     delta: float = 0.0
     gamma: float = 0.0
+    theta: float = 0.0  # per-day, notional-weighted: ccy2 / 1 day (原币)
+    vega: float = 0.0   # per 1% vol, notional-weighted: ccy2 / 1% vol (原币)
     # Transparency: the FX rate used to convert ccy2 → CNY (1.0 if ccy2 == CNY)
     fx_rate_to_cny: float | None = None
     # Trade count for context
@@ -221,6 +223,8 @@ class OptionTradeAnalysisDetail(BaseModel):
     exercise_status: str | None = None
     delta: float | None = None
     gamma: float | None = None
+    theta: float | None = None  # per-unit, per-day: ccy2 / 1 ccy1 / 1 day
+    vega: float | None = None   # per-unit, per 1% vol: ccy2 / 1 ccy1 / 1% vol
     npv: float | None = None
     premium: float | None = None
     premium_pnl: float | None = None

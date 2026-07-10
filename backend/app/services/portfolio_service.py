@@ -1100,6 +1100,8 @@ class PortfolioService:
             npv_val = greeks.get("npv") or 0.0
             detail.delta = round(greeks.get("delta") or 0.0, 6)
             detail.gamma = round(greeks.get("gamma") or 0.0, 6)
+            detail.theta = round(greeks.get("theta") or 0.0, 6)
+            detail.vega = round(greeks.get("vega") or 0.0, 6)
             detail.npv = round(npv_val, 6)
             detail.premium = round(premium_per_unit, 6) if premium_per_unit is not None else None
 
@@ -1219,6 +1221,10 @@ class PortfolioService:
                     pair_metrics.delta += detail.delta * notional
                 if detail.gamma is not None:
                     pair_metrics.gamma += detail.gamma * notional
+                if detail.theta is not None:
+                    pair_metrics.theta += detail.theta * notional
+                if detail.vega is not None:
+                    pair_metrics.vega += detail.vega * notional
                 # NPV / P&L aggregated in CNY (sum of *_cny values)
                 if detail.npv_cny is not None:
                     pair_metrics.npv_cny += detail.npv_cny
@@ -1303,6 +1309,8 @@ class PortfolioService:
         for pair_metrics in per_pair.values():
             pair_metrics.delta = round(pair_metrics.delta, 6)
             pair_metrics.gamma = round(pair_metrics.gamma, 6)
+            pair_metrics.theta = round(pair_metrics.theta, 6)
+            pair_metrics.vega = round(pair_metrics.vega, 6)
             pair_metrics.npv_cny = round(pair_metrics.npv_cny, 2)
             pair_metrics.premium_pnl_cny = round(pair_metrics.premium_pnl_cny, 2)
             pair_metrics.exercise_pnl_cny = round(pair_metrics.exercise_pnl_cny, 2)

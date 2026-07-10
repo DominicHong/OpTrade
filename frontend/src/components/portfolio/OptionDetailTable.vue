@@ -21,6 +21,8 @@ const columns: SortColumn[] = [
   { key: 'exercise_status', label: '行权状态', sortable: true, type: 'string' },
   { key: 'delta', label: 'Delta', sortable: true, type: 'number' },
   { key: 'gamma', label: 'Gamma', sortable: true, type: 'number' },
+  { key: 'theta', label: 'Theta', sortable: true, type: 'number' },
+  { key: 'vega', label: 'Vega', sortable: true, type: 'number' },
   { key: 'npv', label: 'NPV', sortable: true, type: 'number' },
   { key: 'premium', label: '期权费', sortable: true, type: 'number' },
   { key: 'premium_pnl', label: '估值损益(万)', sortable: true, type: 'number' },
@@ -100,6 +102,8 @@ function exerciseStatusClass(status: string | null | undefined): string {
             </td>
             <td>{{ t.error ? '—' : fmt(t.delta) }}</td>
             <td>{{ t.error ? '—' : fmt(t.gamma) }}</td>
+            <td>{{ t.error ? '—' : fmt(t.theta) }}</td>
+            <td>{{ t.error ? '—' : fmt(t.vega) }}</td>
             <td>{{ t.error ? '—' : fmt(t.npv, 4) }}</td>
             <td>{{ t.error ? '—' : fmt(t.premium, 4) }}</td>
             <td :class="profitColor(t.premium_pnl)">{{ t.error ? '—' : fmt(toWan(t.premium_pnl), 2) }}</td>
@@ -111,7 +115,7 @@ function exerciseStatusClass(status: string | null | undefined): string {
             <td :class="profitColor(t.total_pnl_cny)">{{ t.error ? '—' : fmt(toWan(t.total_pnl_cny), 2) }}</td>
           </tr>
           <tr v-for="t in pagedTrades" :key="'opterr-' + t.trade_id" class="error-row-detail" v-show="t.error">
-            <td :colspan="20" class="error-inline">{{ t.error }}</td>
+            <td :colspan="22" class="error-inline">{{ t.error }}</td>
           </tr>
         </tbody>
       </table>

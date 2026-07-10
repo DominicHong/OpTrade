@@ -9,7 +9,7 @@ const props = defineProps<{
 
 const fmt = (v: number | null | undefined, d = 2): string => _fmt(v, d)
 
-// Zero-value filter: hide pairs where ALL 6 indicators (after toWan scaling)
+// Zero-value filter: hide pairs where ALL 8 indicators (after toWan scaling)
 // are within ±0.0001 in 万 units (i.e. ±1 in original currency units).
 const FILTER_THRESHOLD = 0.0001
 
@@ -21,6 +21,8 @@ function shouldHide(m: CcyPairOptionMetrics): boolean {
     toWan(m.total_option_pnl_cny),
     toWan(m.delta),
     toWan(m.gamma),
+    toWan(m.theta),
+    toWan(m.vega),
   ]
   return values.every((v) => v != null && Math.abs(v as number) <= FILTER_THRESHOLD)
 }
@@ -57,6 +59,8 @@ const summary = computed(() => {
           <th>期权总损益 (CNY, 万)</th>
           <th title="原币 (ccy2/1ccy1) 单位，未折算 CNY">Delta (原币)</th>
           <th title="原币 (ccy2/1ccy1) 单位，未折算 CNY">Gamma (原币)</th>
+          <th title="原币，每日 Theta (theta×notional，ccy2/天)，未折算 CNY">Theta (原币)</th>
+          <th title="原币，Vega (vega×notional，每 1% 波动率变化，ccy2/1%vol)，未折算 CNY">Vega (原币)</th>
         </tr>
       </thead>
       <tbody>
@@ -75,6 +79,8 @@ const summary = computed(() => {
           </td>
           <td>{{ fmt(m.delta) }}</td>
           <td>{{ fmt(m.gamma) }}</td>
+          <td>{{ fmt(m.theta) }}</td>
+          <td>{{ fmt(m.vega) }}</td>
         </tr>
         <!-- Summary row -->
         <tr class="summary-row">
@@ -93,6 +99,8 @@ const summary = computed(() => {
           <td :class="profitColor(summary.total_option_pnl_cny)">
             {{ fmt(toWan(summary.total_option_pnl_cny)) }}
           </td>
+          <td class="col-na">—</td>
+          <td class="col-na">—</td>
           <td class="col-na">—</td>
           <td class="col-na">—</td>
         </tr>

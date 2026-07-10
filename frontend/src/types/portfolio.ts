@@ -134,6 +134,8 @@ export interface CcyPairOptionMetrics {
   // (b) Greeks in original currency (ccy2 / 1 ccy1)
   delta: number
   gamma: number
+  theta: number  // per-day, notional-weighted: ccy2 / 1 day (原币)
+  vega: number   // per 1% vol, notional-weighted: ccy2 / 1% vol (原币)
   // Transparency: FX rate used to convert ccy2 → CNY (1.0 if ccy2 == CNY)
   fx_rate_to_cny: number | null
   trade_count: number
@@ -164,6 +166,8 @@ export interface OptionTradeAnalysisDetail {
   exercise_status: string | null
   delta: number | null
   gamma: number | null
+  theta: number | null  // per-unit, per-day: ccy2 / 1 ccy1 / 1 day
+  vega: number | null   // per-unit, per 1% vol: ccy2 / 1 ccy1 / 1% vol
   npv: number | null
   premium: number | null
   premium_pnl: number | null

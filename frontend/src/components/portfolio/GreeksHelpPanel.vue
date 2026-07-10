@@ -40,6 +40,20 @@ const expanded = ref(false)
               <td>ccy2 / (1 ccy1)²</td>
             </tr>
             <tr>
+              <td><strong>Theta</strong></td>
+              <td>
+                Θ = −∂V / ∂T，每日时间衰减（每过 1 天期权价值的变化）
+              </td>
+              <td>ccy2 / 1 ccy1 / 1 天</td>
+            </tr>
+            <tr>
+              <td><strong>Vega</strong></td>
+              <td>
+                ν = ∂V / ∂σ，隐含波动率变动 1% 时期权价值的变化
+              </td>
+              <td>ccy2 / 1 ccy1 / 1% vol</td>
+            </tr>
+            <tr>
               <td><strong>NPV</strong></td>
               <td>理论期权费现值，Long 为正，Short 为负</td>
               <td>ccy2 / 1 ccy1</td>
@@ -75,6 +89,45 @@ const expanded = ref(false)
       </section>
 
       <section>
+        <h4>Theta 算法</h4>
+        <p class="help-desc">
+          QuantLib <code>AnalyticEuropeanEngine</code> 原生返回 <strong>每年</strong> Theta（Θ = −∂V/∂T，T 以年为单位）。系统将其转换为 <strong>每日</strong> Theta 用于展示：
+        </p>
+        <ol class="help-ol">
+          <li>
+            <strong>年 → 日换算</strong>：<code>theta = option.thetaPerDay()</code>，即 Θ<sub>日</sub> = Θ<sub>年</sub> / 365（Actual/365Fixed 日计数惯例）。
+          </li>
+          <li>
+            <strong>空头取反</strong>：卖出（Short）仓位执行 <code>theta = -theta</code>，使多头的时间衰减（通常为负）变为空头的时间收益（正），与 Long = 正 / Short = 负 的符号约定一致。
+          </li>
+          <li>
+            <strong>精度</strong>：逐笔 Theta 保留 6 位小数。
+          </li>
+        </ol>
+        <p class="help-example">
+          注意：QuantLib 的 Theta 符号遵循 Θ = −∂V/∂T（Theta 为正表示随时间推移价值增加）。部分平台使用相反符号（Θ = ∂V/∂t，t 反向增长），比较前请先确认符号约定。
+        </p>
+      </section>
+
+      <section>
+        <h4>Vega 算法</h4>
+        <p class="help-desc">
+          QuantLib <code>AnalyticEuropeanEngine</code> 原生返回波动率变动 <strong>1.0（即 100%）</strong> 时的 Vega（ν = ∂V/∂σ，σ 为小数形式）。由于波动率以百分数报价和管理，系统将其转换为 <strong>每 1% 变动</strong>：
+        </p>
+        <ol class="help-ol">
+          <li>
+            <strong>1.0 → 1% 换算</strong>：<code>vega = option.vega() / 100.0</code>，即 ν<sub>1%</sub> = ν<sub>1.0</sub> / 100。转换后展示的 Vega 是隐含波动率移动 1 个百分点（如 15% → 16%）时期权价值的变化量。
+          </li>
+          <li>
+            <strong>空头取反</strong>：卖出（Short）仓位执行 <code>vega = -vega</code>，与 Long = 正 / Short = 负 的符号约定一致。
+          </li>
+          <li>
+            <strong>精度</strong>：逐笔 Vega 保留 6 位小数。
+          </li>
+        </ol>
+      </section>
+
+      <section>
         <h4>组合汇总（加权，单位：万）</h4>
         <p class="help-desc">
           组合层面为 <strong>名义本金加权求和</strong>，再折算为 <strong>万</strong>。
@@ -82,6 +135,8 @@ const expanded = ref(false)
         <div class="formula-list">
           <div class="formula">加权 Delta = Σ (delta<sub>i</sub> × notional1<sub>i</sub>)</div>
           <div class="formula">加权 Gamma = Σ (gamma<sub>i</sub> × notional1<sub>i</sub>)</div>
+          <div class="formula">加权 Theta = Σ (theta<sub>i</sub> × notional1<sub>i</sub>)</div>
+          <div class="formula">加权 Vega  = Σ (vega<sub>i</sub>  × notional1<sub>i</sub>)</div>
           <div class="formula">加权 NPV   = Σ (npv<sub>i</sub>   × notional1<sub>i</sub>)</div>
           <div class="formula">加权盈利   = Σ (profit<sub>i</sub> × notional1<sub>i</sub>)</div>
         </div>
@@ -200,6 +255,14 @@ const expanded = ref(false)
   margin: 0.35rem 0 0.5rem;
   padding-left: 1.25rem;
   color: var(--color-text-secondary);
+}
+.help-body .help-ol {
+  margin: 0.35rem 0 0.5rem;
+  padding-left: 1.5rem;
+  color: var(--color-text-secondary);
+}
+.help-body .help-ol li {
+  margin-bottom: 0.3rem;
 }
 .help-body code {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
