@@ -2,13 +2,42 @@
 import type { SpotTradeAnalysisDetail } from '@/types/portfolio'
 import PaginationControls from '@/components/shared/PaginationControls.vue'
 import { useClientPagination } from '@/composables/useClientPagination'
+import { useClientSort, type SortColumn } from '@/composables/useClientSort'
 import { fmt, fmtDate, profitColor, toWan } from '@/utils/format'
 
 const props = defineProps<{
   trades: SpotTradeAnalysisDetail[]
 }>()
 
-const { page, totalPages, pagedItems: pagedTrades } = useClientPagination(() => props.trades)
+const columns: SortColumn[] = [
+  { key: 'trade_id', label: '交易ID', sortable: true, type: 'number' },
+  { key: 'ccy_pair', label: '货币对', sortable: true, type: 'string' },
+  { key: 'direction', label: '方向', sortable: true, type: 'string' },
+  { key: 'is_derivative', label: '类型', sortable: true, type: 'string' },
+  { key: 'deal_price', label: '成交价', sortable: true, type: 'number' },
+  { key: 'notional', label: 'Notional(万)', sortable: true, type: 'number' },
+  { key: 'trade_date', label: '交易日', sortable: true, type: 'date' },
+  { key: 'settlement_date', label: '清算日', sortable: true, type: 'date' },
+  { key: 'market_rate', label: '市场汇率', sortable: true, type: 'number' },
+  { key: 'adjusted_deal_price', label: '调整成交价', sortable: true, type: 'number' },
+  { key: 'pnl', label: '即期损益(万)', sortable: true, type: 'number' },
+  { key: 'fx_rate_to_cny', label: '汇率', sortable: true, type: 'number' },
+  { key: 'pnl_cny', label: '即期损益(CNY,万)', sortable: true, type: 'number' },
+]
+
+const { sortBy, sortOrder, sortedItems, toggleSort } = useClientSort<SpotTradeAnalysisDetail>({
+  items: () => props.trades,
+  defaultSortBy: 'trade_date',
+  defaultSortOrder: 'desc',
+  getColumnType: key => columns.find(c => c.key === key)?.type,
+})
+
+const { page, totalPages, pagedItems: pagedTrades } = useClientPagination(() => sortedItems.value)
+
+function onSort(key: string) {
+  toggleSort(key)
+  page.value = 1
+}
 </script>
 
 <template>
@@ -18,19 +47,20 @@ const { page, totalPages, pagedItems: pagedTrades } = useClientPagination(() => 
       <table class="detail-table">
         <thead>
           <tr>
-            <th>交易ID</th>
-            <th>货币对</th>
-            <th>方向</th>
-            <th>类型</th>
-            <th>成交价</th>
-            <th>Notional(万)</th>
-            <th>交易日</th>
-            <th>清算日</th>
-            <th>市场汇率</th>
-            <th>调整成交价</th>
-            <th>即期损益(万)</th>
-            <th title="原币损益折算 CNY 用的汇率">汇率</th>
-            <th>即期损益(CNY,万)</th>
+            <th
+              v-for="col in columns"
+              :key="col.key"
+              :class="{
+                sortable: col.sortable !== false,
+                active: sortBy === col.key,
+              }"
+              @click="onSort(col.key)"
+            >
+              {{ col.label }}
+              <span v-if="sortBy === col.key" class="sort-arrow">
+                {{ sortOrder === 'asc' ? '▲' : '▼' }}
+              </span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -95,6 +125,19 @@ const { page, totalPages, pagedItems: pagedTrades } = useClientPagination(() => 
   font-weight: 600;
   background: var(--color-bg);
 }
+.detail-table th.sortable {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.detail-table th.sortable:hover {
+  background: var(--color-bg-hover, var(--color-bg-surface));
+  color: var(--color-text);
+}
+.detail-table th.active {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
 .detail-table td:first-child,
 .detail-table th:first-child { text-align: left; }
 .detail-table td:nth-child(2),
@@ -103,6 +146,7 @@ const { page, totalPages, pagedItems: pagedTrades } = useClientPagination(() => 
 .detail-table th:nth-child(3) { text-align: center; }
 .detail-table td:nth-child(4),
 .detail-table th:nth-child(4) { text-align: center; }
+.sort-arrow { font-size: 0.625rem; margin-left: 2px; }
 .col-rate {
   color: var(--color-text-secondary);
   font-size: 0.7rem;

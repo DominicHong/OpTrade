@@ -23,7 +23,7 @@ const ui = useUiStore()
     </div>
     <div class="header-spacer"></div>
     <div class="header-actions">
-      <div class="header-badge">v0.3.0</div>
+      <div class="header-badge">0.3.1</div>
     </div>
   </header>
 </template>
