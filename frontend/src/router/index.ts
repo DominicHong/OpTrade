@@ -39,6 +39,11 @@ const router = createRouter({
       name: 'exchange-rates',
       component: () => import('@/pages/ExchangeRateManagementPage.vue'),
     },
+    {
+      path: '/scenario',
+      name: 'scenario',
+      component: () => import('@/pages/ScenarioAnalysisPage.vue'),
+    },
   ],
 })
 

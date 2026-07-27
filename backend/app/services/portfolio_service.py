@@ -670,6 +670,8 @@ class PortfolioService:
         ccy_pair: str,
         valuation_date: date,
         curve_type: str | None,
+        *,
+        pair_spot_override: dict[str, float] | None = None,
     ) -> tuple[float | None, str | None]:
         """Resolve market rate for a spot trade's currency pair.
 
@@ -679,10 +681,14 @@ class PortfolioService:
         if not ccy_pair or "/" not in ccy_pair:
             return None, f"Invalid currency pair: {ccy_pair!r}"
 
-        if ccy_pair.upper() not in SUPPORTED_CCY_PAIRS:
+        ccy_pair_upper = ccy_pair.upper()
+
+        if pair_spot_override and ccy_pair_upper in pair_spot_override:
+            return pair_spot_override[ccy_pair_upper], None
+
+        if ccy_pair_upper not in SUPPORTED_CCY_PAIRS:
             return None, f"Unsupported currency pair: {ccy_pair}"
 
-        ccy_pair_upper = ccy_pair.upper()
         if ccy_pair_upper in CNY_QUOTED_PAIRS:
             # CNY-quoted pair → use FX implied rate curve
             foreign_ccy = split_ccy_pair(ccy_pair_upper)[0]
@@ -736,12 +742,13 @@ class PortfolioService:
         expiry_spot_rate: float | None,
         *,
         start_date: date | None = None,
+        pair_spot_override: dict[str, float] | None = None,
     ) -> "SpotTradeAnalysisDetail":
-        """Process a single spot trade for P&L calculation.
+        """Process a single spot trade for P&amp;L calculation.
 
-        When ``trade_date < start_date``, the position pre-dates the P&L
+        When ``trade_date < start_date``, the position pre-dates the P&amp;L
         interval.  The ``adjusted_deal_price`` is then set to the market
-        rate at ``start_date`` so that P&L reflects only the
+        rate at ``start_date`` so that P&amp;L reflects only the
         ``[start_date, valuation_date]`` window.
         """
         from app.schemas.portfolio import SpotTradeAnalysisDetail
@@ -764,6 +771,7 @@ class PortfolioService:
 
         market_rate, error = self._resolve_spot_params(
             session, trade.ccy_pair, valuation_date, curve_type,
+            pair_spot_override=pair_spot_override,
         )
         if error:
             detail.error = error
@@ -775,6 +783,7 @@ class PortfolioService:
         if start_date is not None and trade.trade_date is not None and trade.trade_date < start_date:
             start_rate, start_err = self._resolve_spot_params(
                 session, trade.ccy_pair, start_date, curve_type,
+                pair_spot_override=pair_spot_override,
             )
             if start_err or start_rate is None:
                 detail.error = f"Cannot resolve market rate at start_date {start_date}: {start_err}"
@@ -919,16 +928,24 @@ class PortfolioService:
         self,
         session: Session,
         request: "AggregatedAnalysisRequest",
+        *,
+        pair_spot_override: dict[str, float] | None = None,
+        pair_fx_override_ccy_to_cny: dict[str, float] | None = None,
     ) -> "AggregatedAnalysisResponse":
-        """Calculate aggregated P&L across multiple portfolios.
+        """Calculate aggregated P&amp;L across multiple portfolios.
 
         Queries option, spot and swap trades for the selected portfolios
         whose position exists at ``valuation_date`` (i.e. ``trade_date``
         for spot/option, ``near_value_date`` for swap, both ``<=
         valuation_date``).  The ``start_date`` does **not** filter trades
-        in or out — it only adjusts the P&L formula for trades dealt
+        in or out — it only adjusts the P&amp;L formula for trades dealt
         before ``start_date`` so that only the ``[start_date,
         valuation_date]`` portion is recognised.
+
+        Optionally accepts per-pair overrides for scenario analysis:
+        ``pair_spot_override`` overrides the market rate in
+        ``_resolve_spot_params``; ``pair_fx_override_ccy_to_cny``
+        overrides the ``ccy2 → CNY`` FX rate used for P&amp;L conversion.
         """
         from app.schemas.portfolio import (
             AggregatedAnalysisRequest,
@@ -1008,6 +1025,10 @@ class PortfolioService:
             ccy2_u = ccy2.upper()
             if ccy2_u in fx_rate_cache:
                 return fx_rate_cache[ccy2_u]
+            if pair_fx_override_ccy_to_cny and ccy2_u in pair_fx_override_ccy_to_cny:
+                rate = pair_fx_override_ccy_to_cny[ccy2_u]
+                fx_rate_cache[ccy2_u] = rate
+                return rate
             rate = self.exchange_rate_service.get_rate_to_cny(session, ccy2_u, valuation_date)
             fx_rate_cache[ccy2_u] = rate
             return rate
@@ -1247,6 +1268,7 @@ class PortfolioService:
             detail = self._process_spot_trade(
                 session, trade, valuation_date, request.curve_type,
                 is_derivative, expiry_spot, start_date=start_date,
+                pair_spot_override=pair_spot_override,
             )
 
             # CNY conversion for spot P&L

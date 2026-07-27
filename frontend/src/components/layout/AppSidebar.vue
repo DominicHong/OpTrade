@@ -13,6 +13,7 @@ const navItems = [
   { path: '/curves', label: '曲线管理', icon: 'curves' },
   { path: '/exchange-rates', label: '汇率管理', icon: 'exchange' },
   { path: '/portfolio', label: '组合分析', icon: 'portfolio' },
+  { path: '/scenario', label: '情景分析', icon: 'scenario' },
 ]
 
 const iconPaths: Record<string, string> = {
@@ -23,6 +24,7 @@ const iconPaths: Record<string, string> = {
   portfolios: 'M20 7h-4l-2-3H8L6 4H2v16h20V7zM4 18V7h2l2-3h6l2 3h4v11H4z',
   curves: 'M3 18v-2a4 4 0 014-4h1a4 4 0 014 4v2M7 8V6a5 5 0 0110 0v2M4 21h16M3 21v-7m18 7v-7',
   exchange: 'M3 7h14m0 0l-3-3m3 3l-3 3M21 17H7m0 0l3-3m-3 3l3 3',
+  scenario: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 }
 
 function navigate(path: string) {
