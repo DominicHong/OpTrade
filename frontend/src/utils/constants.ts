@@ -39,11 +39,3 @@ export const EXPIRY_BUCKETS = [
   { label: '>1Y', maxDays: Infinity },
 ]
 
-/** Default scenario spot shifts (in pips/bps). */
-export const DEFAULT_SPOT_SHIFTS = [-500, -200, -100, -50, 0, 50, 100, 200, 500]
-
-/** Default scenario vol shifts (absolute). */
-export const DEFAULT_VOL_SHIFTS = [-0.05, -0.02, -0.01, 0, 0.01, 0.02, 0.05]
-
-/** Default time decay horizons (in days). */
-export const DEFAULT_TIME_HORIZONS = [0, 7, 14, 30, 60, 90]

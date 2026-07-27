@@ -19,7 +19,6 @@ class GreeksResult(BaseModel):
     rf_rate_base: float | None = None
     rf_rate_quote: float | None = None
     time_to_expiry_years: float | None = None
-    scenario_label: str = "base"
     error: str | None = None
 
     model_config = {"from_attributes": True}
@@ -34,7 +33,6 @@ class GreeksRequest(BaseModel):
     rf_rate_base: float | None = None
     rf_rate_quote: float | None = None
     valuation_date: date | None = None
-    scenario_label: str = "base"
 
 
 class PricingRequest(BaseModel):

@@ -79,7 +79,7 @@ backend/         — FastAPI backend
     models/      — SQLModel entities (core.py: OptionTrade, Portfolio, Counterparty, SpotTrade, barrier/asian details)
     schemas/     — Pydantic request/response schemas
     routers/     — REST API endpoints (all mounted under /api/v1/*)
-    services/    — Business logic (pricing, Greeks, import, scenarios, curves) — only place QuantLib is used
+    services/    — Business logic (pricing, Greeks, import, curves) — only place QuantLib is used
     utils/       — Helpers (column_mapping, date_utils, quantlib_helpers, excel_parser)
     desktop/     — PyWebView window launcher
   tests/         — pytest tests (conftest.py provides engine/session/client fixtures)
@@ -87,7 +87,7 @@ backend/         — FastAPI backend
 frontend/        — Vue3 SPA (no PyWebView dependency)
   src/
     api/         — Axios API wrappers
-    pages/       — Page components (Dashboard, OptionTradeList, OptionTradeDetail, Portfolio, Scenario, CurveManagement, ExchangeRateManagement)
+    pages/       — Page components (Dashboard, OptionTradeList, OptionTradeDetail, Portfolio, CurveManagement, ExchangeRateManagement)
     components/  — Reusable components (layout, shared, trade, risk, portfolio)
     stores/      — Pinia stores
     router/      — Vue Router config (hash mode for PyWebView compat)
@@ -99,7 +99,6 @@ frontend/        — Vue3 SPA (no PyWebView dependency)
 - **Trade Management**: View, search, filter, and edit FX option trades
 - **Excel Import**: COMSTAR CSV/Excel trade export pipeline with validation (Chinese column headers mapped via `utils/column_mapping.py`)
 - **Greeks Calculation**: Delta, Gamma, Vega, Theta, Rho via QuantLib
-- **Scenario Analysis**: Spot shift, vol shift, time decay, 2D heatmap
 - **Portfolio Analytics**: Aggregated risk metrics by portfolio
 - **Curve Management**: FX implied rate curves from chinamoney.com.cn (auto-crawl via Playwright or manual XLSX upload)
 - **Dashboard**: Summary statistics, exposure breakdown

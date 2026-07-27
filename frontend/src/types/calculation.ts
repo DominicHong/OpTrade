@@ -13,7 +13,6 @@ export interface GreeksResult {
   rf_rate_base: number | null
   rf_rate_quote: number | null
   time_to_expiry_years: number | null
-  scenario_label: string
   error: string | null
 }
 
@@ -23,7 +22,6 @@ export interface GreeksRequest {
   volatility?: number | null
   rf_rate_base?: number | null
   rf_rate_quote?: number | null
-  scenario_label?: string
 }
 
 export interface PricingRequest {
@@ -45,24 +43,3 @@ export interface PricingResult {
   error: string | null
 }
 
-export interface ScenarioRequest {
-  trade_ids?: number[]
-  portfolio_id?: number | null
-  shifts?: {
-    spot?: number[]
-    vol?: number[]
-    days_forward?: number[]
-  }
-  base_spot?: number
-  base_vol?: number
-  rf_rate_base?: number
-  rf_rate_quote?: number
-  valuation_date?: string | null
-}
-
-export interface HeatmapResponse {
-  spot_shifts: number[]
-  vol_shifts: number[]
-  values: number[][]
-  base_greeks: GreeksResult | null
-}

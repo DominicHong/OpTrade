@@ -76,13 +76,12 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
-    from app.routers import option_trades, portfolios, counterparties, calculations, scenarios, imports, dashboard, curves, spot_trades, swap_trades, exchange_rates
+    from app.routers import option_trades, portfolios, counterparties, calculations, imports, dashboard, curves, spot_trades, swap_trades, exchange_rates
 
     app.include_router(option_trades.router)
     app.include_router(portfolios.router)
     app.include_router(counterparties.router)
     app.include_router(calculations.router)
-    app.include_router(scenarios.router)
     app.include_router(imports.router)
     app.include_router(dashboard.router)
     app.include_router(curves.router)

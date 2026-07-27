@@ -27,7 +27,6 @@ def calculate_greeks(
                 trade_id=trade_id,
                 calculation_date=date.today(),
                 error=f"OptionTrade {trade_id} not found",
-                scenario_label=request.scenario_label,
             ))
             continue
 
@@ -36,7 +35,6 @@ def calculate_greeks(
                 trade_id=trade_id,
                 calculation_date=date.today(),
                 error="Option trade missing required fields (strike, expiry_date, trade_type, direction)",
-                scenario_label=request.scenario_label,
             ))
             continue
 
@@ -76,7 +74,6 @@ def calculate_greeks(
             rf_rate_base=rf_rate_base,
             rf_rate_quote=rf_rate_quote,
             time_to_expiry_years=tte,
-            scenario_label=request.scenario_label,
             error=greeks.get("error"),
         ))
 

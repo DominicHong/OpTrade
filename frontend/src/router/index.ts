@@ -30,11 +30,6 @@ const router = createRouter({
       component: () => import('@/pages/PortfolioAnalysisPage.vue'),
     },
     {
-      path: '/scenario',
-      name: 'scenario',
-      component: () => import('@/pages/ScenarioPage.vue'),
-    },
-    {
       path: '/curves',
       name: 'curves',
       component: () => import('@/pages/CurveManagementPage.vue'),

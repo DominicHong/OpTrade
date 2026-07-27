@@ -1,12 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { GreeksResult, HeatmapResponse } from '@/types/calculation'
+import type { GreeksResult } from '@/types/calculation'
 import { calculateGreeks as apiCalculateGreeks } from '@/api/calculations'
-import { runHeatmap as apiRunHeatmap } from '@/api/scenarios'
 
 export const useCalculationStore = defineStore('calculation', () => {
   const greeksResults = ref<GreeksResult[]>([])
-  const heatmapData = ref<HeatmapResponse | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -28,20 +26,8 @@ export const useCalculationStore = defineStore('calculation', () => {
     }
   }
 
-  async function runHeatmap(params: Record<string, unknown>) {
-    loading.value = true
-    error.value = null
-    try {
-      heatmapData.value = await apiRunHeatmap(params)
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Heatmap calculation failed'
-    } finally {
-      loading.value = false
-    }
-  }
-
   return {
-    greeksResults, heatmapData, loading, error,
-    calculateGreeks, runHeatmap,
+    greeksResults, loading, error,
+    calculateGreeks,
   }
 })

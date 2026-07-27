@@ -37,8 +37,7 @@ class GreeksService:
 
         Time to expiry is specified via *valuation_date* and *expiry_date*
         (preferred — exact, reproducible). The legacy *time_to_expiry_years*
-        is kept as a fallback for scenario analysis and only used when both
-        dates are None.
+        is kept as a fallback and only used when both dates are None.
 
         Args:
             option_type: "Call" or "Put"
@@ -59,7 +58,7 @@ class GreeksService:
         try:
             # Determine evaluation/expiry dates and short-circuit expired
             # options in a single dispatch. Dates are preferred (exact,
-            # reproducible); TTE is a fallback for scenario analysis.
+            # reproducible); TTE is a fallback.
             if valuation_date is not None and expiry_date is not None:
                 # Same-day is still alive (option can be exercised on its
                 # expiry date); strictly-after means expired → all Greeks 0.
@@ -91,7 +90,7 @@ class GreeksService:
                         "rho": 0.0,
                         "error": None,
                     }
-                # Fallback: anchor + TTE (for scenario analysis).
+                # Fallback: anchor + TTE.
                 # Use int(x + 0.5) instead of int(x) to avoid FP truncation:
                 # int(3/365*365) = int(2.999...) = 2 (WRONG, loses 33% of T)
                 # int(3/365*365 + 0.5) = int(3.499...) = 3 (CORRECT)
