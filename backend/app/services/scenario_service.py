@@ -8,13 +8,16 @@ PortfolioService.calculate_aggregated_analysis pipeline.
 from __future__ import annotations
 
 import logging
-from copy import deepcopy
 from datetime import date
 
 from sqlmodel import Session, select
 
 from app.models import OptionTrade, Portfolio, SpotTrade, SwapTrade
-from app.schemas.portfolio import AggregatedAnalysisRequest, OptionTradeParamsOverride
+from app.schemas.portfolio import (
+    AggregatedAnalysisRequest,
+    AggregatedSummary,
+    OptionTradeParamsOverride,
+)
 from app.schemas.scenario import (
     BuiltinScenariosRequest,
     BuiltinScenariosResponse,
@@ -31,8 +34,11 @@ from app.services.exchange_rate_service import (
     get_exchange_rate_service,
 )
 from app.services.greeks_service import GreeksService
-from app.services.portfolio_service import PortfolioService
-from app.utils.ccy_utils import split_ccy_pair
+from app.services.portfolio_service import (
+    PortfolioService,
+    _TARGET_CURRENCIES,
+    _split_ccy_pair,
+)
 from app.utils.currency_pairs import CNY_QUOTED_PAIRS, SUPPORTED_CCY_PAIRS
 
 logger = logging.getLogger("optrade.service.scenario")
@@ -65,42 +71,18 @@ BUILTIN_SCENARIOS = _build_builtin_scenarios()
 # ── helpers ───────────────────────────────────────────────────────────
 
 
-def _split_ccy(ccy_pair: str | None) -> tuple[str | None, str | None]:
-    base, quote = split_ccy_pair(ccy_pair)
-    if base is None or quote is None:
-        return None, None
-    return base.upper(), quote.upper()
-
-
 def _all_portfolio_ids(session: Session) -> list[int]:
     rows = session.exec(select(Portfolio.id)).all()
     return list(rows)
 
 
-def _global_earliest_trade_date(session: Session) -> date | None:
-    from sqlmodel import func as sql_func
-
-    dates: list[date | None] = []
-
-    opt_min = session.exec(
-        select(sql_func.min(OptionTrade.trade_date))
-    ).first()
-    if opt_min:
-        dates.append(opt_min)
-
-    spot_min = session.exec(
-        select(sql_func.min(SpotTrade.trade_date))
-    ).first()
-    if spot_min:
-        dates.append(spot_min)
-
-    swap_min = session.exec(
-        select(sql_func.min(SwapTrade.trade_date))
-    ).first()
-    if swap_min:
-        dates.append(swap_min)
-
-    return min(dates) if dates else None
+def _global_earliest_trade_date(
+    session: Session, portfolio_service: PortfolioService,
+) -> date | None:
+    """Earliest trade_date across ALL portfolios (used as the scenario-analysis
+    default start_date).  Delegates to ``PortfolioService._find_earliest_trade_date``
+    with ``portfolio_ids=None`` to keep the dedup logic in one place."""
+    return portfolio_service._find_earliest_trade_date(session, None)
 
 
 # ── ScenarioService ───────────────────────────────────────────────────
@@ -219,7 +201,7 @@ class ScenarioService:
     ) -> DefaultPairParams:
         """Resolve default valuation params for a single currency pair."""
         ccy_pair_upper = ccy_pair.upper()
-        base, quote = _split_ccy(ccy_pair_upper)
+        base, quote = _split_ccy_pair(ccy_pair_upper)
 
         spot: float | None = None
         vol: float | None = None
@@ -309,14 +291,27 @@ class ScenarioService:
             return self._empty_response(request, scenario_id, scenario_name)
 
         pair_override_map: dict[str, CcyPairScenarioOverride] = {}
-        for po in request.pair_overrides:
-            pair_override_map[po.ccy_pair.upper()] = po
-
         pair_spot_override: dict[str, float] = {}
         pair_fx_override_ccy_to_cny: dict[str, float] = {}
+        for po in request.pair_overrides:
+            upper = po.ccy_pair.upper()
+            pair_override_map[upper] = po
+            # Spot override is used both for spot trade P&L and as the ccy→CNY
+            # conversion rate (for CNY-quoted pairs only).
+            if po.spot is not None:
+                pair_spot_override[upper] = po.spot
+                base, _quote = _split_ccy_pair(upper)
+                if base and upper in CNY_QUOTED_PAIRS:
+                    pair_fx_override_ccy_to_cny[base] = po.spot
+
         trade_overrides: list[OptionTradeParamsOverride] = []
 
-        # Expand pair overrides → trade-level + spot/fx maps
+        # Expand pair overrides → trade-level option overrides.  Scenario-shock
+        # overrides carry ``apply_at_start_date=False`` so that the historical
+        # ``NPV(start_date)`` used in the pre-interval P&L branch is computed
+        # from the start-date curve, NOT from the shock (otherwise the shock
+        # cancels itself — see pnl_algorithm.md §3 Case A, "Override
+        # propagation at start_date").
         option_trades = session.exec(
             select(OptionTrade).where(
                 OptionTrade.portfolio_id.in_(portfolio_ids),
@@ -330,7 +325,10 @@ class ScenarioService:
                 continue
 
             po = pair_override_map[ccy_pair]
-            override = OptionTradeParamsOverride(trade_id=trade.id)
+            override = OptionTradeParamsOverride(
+                trade_id=trade.id,
+                apply_at_start_date=False,
+            )
             has_override = False
 
             if po.spot is not None:
@@ -348,17 +346,6 @@ class ScenarioService:
 
             if has_override:
                 trade_overrides.append(override)
-
-        # Build spot override map (for spot trade P&L)
-        # Build fx override map (for CNY conversion)
-        for po in request.pair_overrides:
-            upper = po.ccy_pair.upper()
-            if po.spot is not None:
-                pair_spot_override[upper] = po.spot
-
-                base, _quote = _split_ccy(upper)
-                if base and upper in CNY_QUOTED_PAIRS:
-                    pair_fx_override_ccy_to_cny[base] = po.spot
 
         # Build aggregated-analysis request and call the existing pipeline
         agg_request = AggregatedAnalysisRequest(
@@ -533,7 +520,7 @@ class ScenarioService:
 
     def earliest_trade_date(self, session: Session) -> EarliestTradeDateResponse:
         return EarliestTradeDateResponse(
-            earliest_trade_date=_global_earliest_trade_date(session),
+            earliest_trade_date=_global_earliest_trade_date(session, self._portfolio_service),
         )
 
     # ── helpers ───────────────────────────────────────────────────
@@ -545,10 +532,6 @@ class ScenarioService:
         scenario_name: str | None = None,
     ) -> ScenarioAnalysisResponse:
         """Return an empty scenario response."""
-        from app.schemas.portfolio import AggregatedSummary
-
-        TARGET = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
-        import datetime as _dt
         return ScenarioAnalysisResponse(
             portfolio_name="",
             portfolio_count=0,
@@ -565,7 +548,7 @@ class ScenarioService:
                 total_spot_pnl_cny=0.0,
                 total_swap_pnl_cny=0.0,
                 total_pnl_cny=0.0,
-                currency_exposures={c: 0.0 for c in TARGET},
+                currency_exposures={c: 0.0 for c in _TARGET_CURRENCIES},
             ),
             option_trades=[],
             spot_trades=[],

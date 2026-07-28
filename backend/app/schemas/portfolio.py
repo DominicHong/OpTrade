@@ -87,6 +87,15 @@ class OptionTradeParamsOverride(BaseModel):
     """User-supplied overrides for a single option trade's valuation parameters.
 
     ``None`` means "resolve from curve (if available) or use trade default".
+
+    ``apply_at_start_date`` controls whether the override is also applied when
+    resolving parameters at ``start_date`` (used in the pre-interval P&L
+    branch — see ``pnl_algorithm.md`` §3 Case A).  Structural overrides
+    supplied via the regular portfolio-analysis endpoint default to ``True``
+    (e.g. cross-pair volatility the curve cannot derive).  Scenario-shock
+    overrides supplied via the scenario-analysis endpoint set it to ``False``
+    so the historical ``NPV(start_date)`` uses the start-date curve, not the
+    scenario shock — preventing the shock from cancelling itself out.
     """
 
     trade_id: int
@@ -94,6 +103,7 @@ class OptionTradeParamsOverride(BaseModel):
     rf_rate_quote: float | None = None
     spot: float | None = None
     volatility: float | None = None
+    apply_at_start_date: bool = True
 
 
 # ---------------------------------------------------------------------------

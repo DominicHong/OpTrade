@@ -37,6 +37,11 @@ logger = logging.getLogger("optrade.service.portfolio")
 
 _SELL_DIRECTIONS = {"sell", "卖出"}
 
+# Currencies reported in the aggregated currency-exposure breakdown.  Shared
+# between the empty-response builder and the live computation so the two stay
+# in sync.
+_TARGET_CURRENCIES = frozenset({"CNY", "USD", "HKD", "EUR", "JPY", "GBP"})
+
 
 def _is_sell(direction: str | None) -> bool:
     """Return True if *direction* represents a short / sell position."""
@@ -603,25 +608,36 @@ class PortfolioService:
     # ------------------------------------------------------------------
 
     def _find_earliest_trade_date(
-        self, session: Session, portfolio_ids: list[int],
+        self, session: Session, portfolio_ids: list[int] | None,
     ) -> date | None:
-        """Return the earliest trade_date across option, spot & swap trades in given portfolios."""
+        """Return the earliest trade_date across option, spot & swap trades.
 
-        min_option = session.exec(
-            select(func.min(OptionTrade.trade_date)).where(
+        ``portfolio_ids == None`` means "across all portfolios" (used by the
+        scenario-analysis global default); a non-empty list filters by
+        portfolio.  An empty list returns ``None``.
+        """
+
+        if portfolio_ids == []:
+            return None
+
+        if portfolio_ids is None:
+            opt_q = select(func.min(OptionTrade.trade_date))
+            spot_q = select(func.min(SpotTrade.trade_date))
+            swap_q = select(func.min(SwapTrade.trade_date))
+        else:
+            opt_q = select(func.min(OptionTrade.trade_date)).where(
                 OptionTrade.portfolio_id.in_(portfolio_ids),
             )
-        ).one()
-        min_spot = session.exec(
-            select(func.min(SpotTrade.trade_date)).where(
+            spot_q = select(func.min(SpotTrade.trade_date)).where(
                 SpotTrade.portfolio_id.in_(portfolio_ids),
             )
-        ).one()
-        min_swap = session.exec(
-            select(func.min(SwapTrade.trade_date)).where(
+            swap_q = select(func.min(SwapTrade.trade_date)).where(
                 SwapTrade.portfolio_id.in_(portfolio_ids),
             )
-        ).one()
+
+        min_option = session.exec(opt_q).one()
+        min_spot = session.exec(spot_q).one()
+        min_swap = session.exec(swap_q).one()
 
         candidates: list[date] = [d for d in (min_option, min_spot, min_swap) if d is not None]
         return min(candidates) if candidates else None
@@ -639,7 +655,6 @@ class PortfolioService:
 
         is_multi = len(request.portfolio_ids) > 1
         display_name = "多投组" if is_multi else ""
-        TARGET_CURRENCIES = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
 
         return AggregatedAnalysisResponse(
             portfolio_name=display_name,
@@ -657,7 +672,7 @@ class PortfolioService:
                 total_spot_pnl_cny=0.0,
                 total_swap_pnl_cny=0.0,
                 total_pnl_cny=0.0,
-                currency_exposures={c: 0.0 for c in TARGET_CURRENCIES},
+                currency_exposures={c: 0.0 for c in _TARGET_CURRENCIES},
             ),
             option_trades=[],
             spot_trades=[],
@@ -779,18 +794,37 @@ class PortfolioService:
 
         detail.market_rate = market_rate
 
-        # Determine adjusted deal price
-        if start_date is not None and trade.trade_date is not None and trade.trade_date < start_date:
+        # Determine adjusted deal price — matches the priority table in
+        # pnl_algorithm.md §1:
+        #   1. Derivative spot (option exercise) with expiry_date >= start_date
+        #      → market_rate(expiry_date) (the spot was created at that rate).
+        #   2. trade_date < start_date (position pre-dates the interval)
+        #      → market_rate(start_date) (historical, NOT scenario-shocked).
+        #   3. Otherwise → deal_price.
+        # For derivative spots, trade_date == option expiry_date by
+        # construction, so the expiry_date >= start_date condition is
+        # equivalent to trade_date >= start_date.
+        if is_derivative and expiry_spot_rate is not None and (
+            start_date is None
+            or trade.trade_date is None
+            or trade.trade_date >= start_date
+        ):
+            adjusted_deal = expiry_spot_rate
+        elif start_date is not None and trade.trade_date is not None and trade.trade_date < start_date:
+            # The start_date basis is the *historical* market rate on that
+            # date, not a scenario shock.  Scenario spot overrides
+            # (pair_spot_override) describe the val_date state only, so
+            # we pass None for the start_date lookup — otherwise the
+            # shock would cancel itself in (market_rate(val) -
+            # market_rate(start)) * notional.
             start_rate, start_err = self._resolve_spot_params(
                 session, trade.ccy_pair, start_date, curve_type,
-                pair_spot_override=pair_spot_override,
+                pair_spot_override=None,
             )
             if start_err or start_rate is None:
                 detail.error = f"Cannot resolve market rate at start_date {start_date}: {start_err}"
                 return detail
             adjusted_deal = start_rate
-        elif is_derivative and expiry_spot_rate is not None:
-            adjusted_deal = expiry_spot_rate
         else:
             adjusted_deal = trade.deal_price
 
@@ -1170,13 +1204,20 @@ class PortfolioService:
                     detail.exercise_pnl = 0.0
                 else:
                     # Option alive at start_date — compute NPV(start_date).
-                    # Pass the user override so user-supplied params (e.g.
-                    # cross-pair volatility, which the curve cannot derive)
-                    # also apply at start_date; curve-resolvable fields are
-                    # still taken from the start_date curve when the override
-                    # leaves them None.
+                    # Scenario-shock overrides carry apply_at_start_date = False;
+                    # they describe the val_date market state and must NOT be
+                    # forwarded to the start_date resolution — otherwise the
+                    # shock inflates NPV(start) alongside NPV(val) and the
+                    # interval P&L does not reflect the shock.  Structural
+                    # overrides (regular portfolio-analysis path,
+                    # apply_at_start_date = True) ARE forwarded so that curve-
+                    # underivable fields (e.g. cross-pair volatility) supplied
+                    # by the user remain in effect at start_date.
+                    start_override = override if (
+                        override is None or override.apply_at_start_date
+                    ) else None
                     spot_s, vol_s, rfb_s, rfq_s, _ = self._resolve_params_for_trade(
-                        session, trade, start_date, override, request.curve_type, None,
+                        session, trade, start_date, start_override, request.curve_type, None,
                     )
                     greeks_start = self.greeks_service.calculate_vanilla_greeks(
                         option_type=trade.trade_type,
@@ -1301,8 +1342,7 @@ class PortfolioService:
             swap_details.append(detail)
 
         # --- Currency exposure (spot trades only) ---
-        TARGET_CURRENCIES = {"CNY", "USD", "HKD", "EUR", "JPY", "GBP"}
-        currency_exposures: dict[str, float] = {c: 0.0 for c in TARGET_CURRENCIES}
+        currency_exposures: dict[str, float] = {c: 0.0 for c in _TARGET_CURRENCIES}
 
         for trade in spot_trades:
             ccy1 = (trade.ccy1 or "").upper()
@@ -1320,9 +1360,9 @@ class PortfolioService:
             amt1 = trade.ccy1_amount or 0.0
             amt2 = trade.ccy2_amount or 0.0
 
-            if ccy1 in TARGET_CURRENCIES:
+            if ccy1 in _TARGET_CURRENCIES:
                 currency_exposures[ccy1] += amt1
-            if ccy2 in TARGET_CURRENCIES:
+            if ccy2 in _TARGET_CURRENCIES:
                 currency_exposures[ccy2] += amt2
 
         # --- 7. Finalise per-pair metrics (round + compute total_option_pnl_cny) ---

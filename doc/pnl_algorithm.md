@@ -31,7 +31,10 @@ the P&L formula is adjusted so only the `[start_date, val_date]` portion is coun
 >
 > Note: the swap reference date is `near_value_date` (the near-leg value date),
 > not `trade_date`. A swap whose near leg has not yet been reached has zero P&L
-> (`未起息`), so it is excluded.
+> (`未起息`), so it is excluded. `trade_date` (which governs *when the swap was
+> dealt*) is still used for the dashboard `start_date` default in §4 and for
+> the `trade_date < start_date` accrual adjustment above — the two roles are
+> distinct and not contradictory.
 
 ---
 
@@ -60,6 +63,19 @@ the P&L formula is adjusted so only the `[start_date, val_date]` portion is coun
 > exercise happened **before** the interval (`expiry_date < start_date`), the
 > `market_rate(start_date)` rule applies — the position's value at `start_date`
 > is the market rate on that day, not the historical exercise rate.
+
+#### Scenario-shock isolation
+
+When this algorithm is invoked from the **scenario analysis** endpoint, a
+per-currency-pair spot shock (`pair_spot_override`) describes the `val_date`
+state and must NOT be substituted for the historical `market_rate(start_date)`
+in row 2 above. Otherwise the shock cancels itself in
+`(market_rate(val) - market_rate(start)) * notional` and the scenario
+reports a spurious ~zero P&L change for pre-interval spot trades. The
+implementation therefore passes `pair_spot_override = None` to the
+`start_date` market-rate lookup. Structural user overrides supplied via the
+regular portfolio-analysis endpoint (which are not scenario shocks) are
+unaffected — they flow through as before.
 
 ### Formula
 
@@ -131,17 +147,12 @@ Clamp `pnl` to `[0, full_pnl]` when `full_pnl >= 0` (or `[full_pnl, 0]` when
 
 ### Special case: `near_vd < start_date`
 
-When the near value date precedes `start_date`, the overlap formula automatically
-sets `accrual_start = start_date`, so only the `[start_date, min(val_date, far_vd)]`
-portion is counted. This is equivalent to:
-
-```
-pnl = full_pnl * (val_date - start_date) / (far_vd - near_vd)
-```
-
-**with an additional cap at `far_vd`**: if the swap matures before `val_date`
-(`far_vd < val_date`), the numerator uses `(far_vd - start_date)` instead of
-`(val_date - start_date)` so the P&L does not over-accrue past maturity.
+When `near_vd < start_date`, the overlap formula above already produces
+``accrual_start = start_date`` and ``accrual_end = min(val_date, far_vd)``,
+so only the ``[start_date, min(val_date, far_vd)]`` portion is recognised —
+no separate code path is needed.  The ``min(val_date, far_vd)`` clamp in
+``accrual_end`` also handles the case where the swap matures before
+``val_date`` (P&L stops accruing at ``far_vd``).
 
 ### Return rate (annualised)
 
@@ -203,7 +214,7 @@ The premium was paid/received at `trade_date` (before the interval). It is
 ```
 total P&L (trade → val)         = (NPV(val)   - premium) × notional
 pre-interval P&L (trade → start)= (NPV(start) - premium) × notional
-────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────
 interval P&L (start → val)      = (NPV(val)   - NPV(start)) × notional
 ```
 
@@ -211,6 +222,25 @@ The premium appears in both the total and pre-interval P&L, so it cancels
 on subtraction. Equivalently, `NPV(start_date)` **replaces** `premium` as the
 cost basis — just as `market_rate(start_date)` replaces `deal_price` in the
 spot algorithm.
+
+> **Override propagation at `start_date`.** `NPV(start_date)` is computed
+> with the same `_resolve_params_for_trade` call as `NPV(val_date)`, and any
+> user-supplied per-trade `OptionTradeParamsOverride` is forwarded to both
+> resolutions by default (`apply_at_start_date = True`).  This is required
+> for **structural** overrides — e.g. a cross-pair volatility the curve
+> cannot derive, supplied manually by the user via the portfolio-analysis
+> endpoint — which represent "what the user knows about this trade's
+> parameters", not time-varying market data, and so must apply at every
+> valuation date.
+>
+> When called from the **scenario-analysis** endpoint the per-trade override
+> carries `apply_at_start_date = False`: it describes a *scenario shock* on
+> `val_date` market parameters (spot/vol/rates), and if it were also applied
+> at `start_date` the shock would inflate both `NPV(val)` and `NPV(start)`
+> (the latter more, because it has more time to expiry and therefore larger
+> vega), causing the interval P&L difference to shrink or even flip sign.
+> The implementation therefore strips shock overrides before resolving the
+> `start_date` parameters so `NPV(start)` comes from the start-date curve.
 
 | Sub-case                                              | `value(val_date)`          | `value(start_date)`        | Interval P&L                                              |
 | ----------------------------------------------------- | -------------------------- | -------------------------- | --------------------------------------------------------- |

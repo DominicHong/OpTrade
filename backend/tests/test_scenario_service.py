@@ -9,6 +9,10 @@ from sqlmodel import Session, select
 from app.models import Portfolio, OptionTrade, SpotTrade, SwapTrade
 from app.models.curve import FxImpliedRate
 from app.models.exchange_rate import ExchangeRate
+from app.schemas.portfolio import (
+    AggregatedAnalysisRequest,
+    OptionTradeParamsOverride,
+)
 from app.schemas.scenario import (
     BuiltinScenariosRequest,
     BuiltinScenariosResponse,
@@ -495,3 +499,179 @@ class TestBuiltinScenariosConstant:
 
     def test_base_is_first(self):
         assert BUILTIN_SCENARIOS[0][0] == "base"
+
+
+# ── Bug A/B regression: scenario shock must not leak to start_date ────
+#
+# When ``start_date > trade_date`` (the trade pre-dates the P&L interval),
+# the P&L formula in ``pnl_algorithm.md`` sections 1 & 3 Case A uses the
+# *historical* market state at ``start_date`` as the cost basis, NOT the
+# scenario shock (which describes the val_date state).  Before the fix the
+# scenario shock was applied to BOTH ends of
+# ``(market_rate(val_date) - market_rate(start_date)) * notional`` (spot)
+# / ``(NPV(val_date) - NPV(start_date)) * notional`` (option) — so the
+# shock largely cancelled itself out and the scenario showed ~zero P&L
+# change for pre-interval trades.
+
+
+class TestScenarioOverrideDoesNotLeakToStartDate:
+    """Two regression tests ensuring the scenario shock stays scoped to val_date."""
+
+    # ``SPOT-USDCNY-1`` has ``trade_date = _today(-10)``; setting
+    # ``start_date = _today(-7)`` makes the spot trade pre-date the interval.
+    _PRE_INTERVAL_START = _today(-7)
+
+    def _run_baseline_and_shock(
+        self, session, portfolio_id, *, shock: CcyPairScenarioOverride | None,
+    ):
+        svc = ScenarioService()
+        overrides = [shock] if shock is not None else []
+        req = ScenarioAnalysisRequest(
+            portfolio_ids=[portfolio_id],
+            start_date=self._PRE_INTERVAL_START,
+            valuation_date=_today(),
+            curve_type="fx_implied_rate",
+            pair_overrides=overrides,
+        )
+        return svc.analyze_custom_scenario(session, req)
+
+    def test_spot_override_does_not_leak_to_start_date_basis(
+        self, session, portfolio_with_trades,
+    ):
+        """Bug A: a spot shock must move the pre-interval spot trade's P&L.
+
+        With the bug, the shock value is used as both
+        ``market_rate(val_date)`` and ``market_rate(start_date)`` (via
+        ``pair_spot_override``), so ``pnl = (shock - shock) * notional = 0``
+        regardless of shock size.  With the fix, the shock only sets
+        ``market_rate(val_date)``; ``market_rate(start_date)`` comes from the
+        start-date curve, so the shock produces a large P&L change.
+        """
+        base = self._run_baseline_and_shock(
+            session, portfolio_with_trades.id, shock=None,
+        )
+        shock = self._run_baseline_and_shock(
+            session, portfolio_with_trades.id,
+            shock=CcyPairScenarioOverride(ccy_pair="USD/CNY", spot=7.5000),
+        )
+
+        base_spot = next(
+            s for s in base.spot_trades if s.trade_id_str == "SPOT-USDCNY-1"
+        )
+        shock_spot = next(
+            s for s in shock.spot_trades if s.trade_id_str == "SPOT-USDCNY-1"
+        )
+
+        assert base_spot.pnl is not None
+        assert shock_spot.pnl is not None
+        assert shock_spot.error is None, shock_spot.error
+        # Before the fix, the shock overrode both market_rate(val) AND
+        # market_rate(start), so pnl ≈ 0 (shock cancels at both ends).
+        # With the fix, only val_date is shocked and P&L must differ.
+        assert shock_spot.pnl != pytest.approx(base_spot.pnl, abs=1.0), (
+            f"shock {shock_spot.pnl} ≈ base {base_spot.pnl} — "
+            "spot shock appears to cancel itself at start_date"
+        )
+        # Direction check: shocking USD/CNY spot UP from ~7.10 to 7.50 for a
+        # long USD position must increase P&L by ~400k CNY (notional 1M × 0.40).
+        assert shock_spot.pnl > base_spot.pnl + 100_000.0, (
+            f"shock {shock_spot.pnl} should be far above base {base_spot.pnl}"
+        )
+        # adjusted_deal_price should remain the historical start-date market
+        # rate — NOT the shock (7.50).
+        assert shock_spot.adjusted_deal_price is not None
+        assert shock_spot.adjusted_deal_price != pytest.approx(7.5000, abs=1e-4), (
+            "adjusted_deal_price leaked the shock into the historical basis"
+        )
+        # market_rate at val_date SHOULD reflect the shock.
+        assert shock_spot.market_rate == pytest.approx(7.5000, abs=1e-6)
+
+    def test_vol_override_does_not_leak_to_start_date_npv(
+        self, session, portfolio_with_trades,
+    ):
+        """Bug B: a vol shock must move the pre-interval option's interval P&L.
+
+        ``OPT-USDCNY-1`` (Buy CALL, trade_date = _today(-30)) is pre-interval
+        when ``start_date = _today(-7)``.  Its interval P&L is
+        ``(NPV(val) - NPV(start)) * notional`` (doc §3 Case A).  With the bug,
+        the vol shock flows into BOTH NPVs, so they both inflate (and NPV(start)
+        inflates *more* — it has more time to expiry, hence higher vega), making
+        ``NPV(val) - NPV(start)`` shrink.  With the fix, only NPV(val) is
+        shocked and ``NPV(val) - NPV(start)`` grows substantially.
+        """
+        base = self._run_baseline_and_shock(
+            session, portfolio_with_trades.id, shock=None,
+        )
+        shock = self._run_baseline_and_shock(
+            session, portfolio_with_trades.id,
+            shock=CcyPairScenarioOverride(ccy_pair="USD/CNY", volatility=0.50),
+        )
+
+        base_opt = next(
+            o for o in base.option_trades if o.trade_id_str == "OPT-USDCNY-1"
+        )
+        shock_opt = next(
+            o for o in shock.option_trades if o.trade_id_str == "OPT-USDCNY-1"
+        )
+
+        assert base_opt.premium_pnl is not None
+        assert shock_opt.premium_pnl is not None
+        assert shock_opt.error is None, shock_opt.error
+        # Prior incorrect behaviour: shock applied to both NPVs → tiny
+        # change (or sign flip, since NPV(start) has more vega).  Correct
+        # behaviour: shock applies only to NPV(val) → big positive change
+        # for a long call (NPV up, start unchanged).
+        assert shock_opt.premium_pnl != pytest.approx(
+            base_opt.premium_pnl, abs=1.0,
+        ), (
+            f"shock {shock_opt.premium_pnl} ≈ base {base_opt.premium_pnl} — "
+            "vol shock appears to cancel itself at start_date"
+        )
+        assert shock_opt.premium_pnl > base_opt.premium_pnl + 50_000.0, (
+            f"shock {shock_opt.premium_pnl} should be far above "
+            f"base {base_opt.premium_pnl} for a long call under vol-up shock"
+        )
+
+    def test_structural_override_still_applies_at_start_date(
+        self, session, portfolio_with_trades,
+    ):
+        """Sanity: a *structural* override (regular portfolio-analysis path,
+        ``apply_at_start_date = True``) MUST still flow into NPV(start_date).
+
+        This guards against an over-zealous fix that strips ALL overrides at
+        start_date, which would break the regular portfolio-analysis path for
+        cross-pair options (where the user supplies the vol the curve cannot
+        derive).
+        """
+        from app.services.portfolio_service import get_portfolio_service
+
+        ps = get_portfolio_service()
+
+        # Locate the option's DB id we want to override.
+        opt_row = session.exec(
+            select(OptionTrade).where(OptionTrade.trade_id == "OPT-USDCNY-1")
+        ).one()
+
+        structural = OptionTradeParamsOverride(
+            trade_id=opt_row.id,
+            volatility=0.20,  # arbitrary structural vol
+        )
+
+        req = AggregatedAnalysisRequest(
+            portfolio_ids=[portfolio_with_trades.id],
+            start_date=self._PRE_INTERVAL_START,
+            valuation_date=_today(),
+            curve_type="fx_implied_rate",
+            trade_params=[structural],
+        )
+        resp = ps.calculate_aggregated_analysis(session, req)
+
+        opt = next(o for o in resp.option_trades if o.trade_id_str == "OPT-USDCNY-1")
+        assert opt.error is None, opt.error
+        assert opt.premium_pnl is not None
+        # The structural override must have participated in BOTH NPV(val) and
+        # NPV(start).  A non-zero P&L is a coarse but sufficient signal that
+        # the override was not silently dropped.
+        assert opt.premium_pnl != 0.0, (
+            "structural override dropped at start_date — cross-pair path broken"
+        )
