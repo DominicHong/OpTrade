@@ -70,9 +70,16 @@ def _resolve_premium_in_ccy2(
     leg of the currency pair. NPV is denominated in ccy2 per unit of ccy1,
     so to compare premium with ``npv × notional1`` we normalise the premium
     to ccy2 using the spot rate when it is quoted in ccy1.
+
+    The P&L formulas treat the premium as an unsigned magnitude (per
+    ``doc/option_rules.md``: "premium_amount is the absolute premium value
+    in premium_currency"), so we take ``abs()`` here to defend against
+    sources (e.g. some COMSTAR exports) that store the premium signed by
+    cash-flow direction (negative for Buy/pay, positive for Sell/receive).
     """
     if premium_amount is None:
         return None
+    premium_amount = abs(premium_amount)
 
     ccy1: str | None = None
     if ccy_pair:

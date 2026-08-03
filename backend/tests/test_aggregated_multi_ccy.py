@@ -734,6 +734,39 @@ class TestExerciseScenario:
         expected = (opt.premium_pnl or 0) + (opt.exercise_pnl or 0)
         assert opt.total_pnl == pytest.approx(expected, abs=0.01)
 
+    def test_expired_option_pnl_with_empty_trade_params(
+        self, service, session, exercised_option_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Regression test for the all-options-expired case.
+
+        When the valuation date is past every option's expiry, the
+        resolve-params endpoint legitimately returns an empty trade list
+        (expired options need no market-data params). The aggregate path
+        must still compute the realised P&L for those expired trades —
+        exercise + premium — without any user-supplied overrides, since
+        the greeks service short-circuits expired options to zero before
+        checking for missing params, and the per-trade validation in
+        calculate_aggregated_analysis only fires for live options.
+        """
+        resp = _aggregate(
+            service, session,
+            [exercised_option_portfolio.id],
+            trade_params=[],  # simulate the empty params table
+        )
+        # Trade must still be processed, not dropped or errored.
+        assert resp.option_trade_count == 1
+        opt = resp.option_trades[0]
+        assert opt.error is None
+        # Expired path → exercise P&L is computed (not None).
+        assert opt.exercise_status == "已行权"
+        assert opt.exercise_pnl is not None
+        # Premium P&L for an expired CALL Buy is (npv(=0) - premium) × notional.
+        assert opt.premium_pnl is not None
+        # total_pnl = premium_pnl + exercise_pnl
+        expected = (opt.premium_pnl or 0) + (opt.exercise_pnl or 0)
+        assert opt.total_pnl == pytest.approx(expected, abs=0.01)
+
 
 # ============================================================================
 # Currency exposure

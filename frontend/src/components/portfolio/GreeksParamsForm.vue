@@ -8,6 +8,11 @@ const props = defineProps<{
   startDate: string | null
   curveType: string | null
   tradeParams: EditableOptionTradeParams[]
+  // True once 获取参数 has run successfully (even with an empty result,
+  // i.e. every option is already expired as of the valuation date — the
+  // backend filter legitimately excludes those, but the aggregate
+  // endpoint still computes realised P&L for them via the curve).
+  hasResolvedParams: boolean
   curveDefinitions: CurveDefinition[]
   loading: boolean
   resolving: boolean
@@ -209,6 +214,9 @@ function displayValue(val: number | null | undefined, decimals = 4): string {
     </div>
 
     <!-- Empty state: no params resolved yet -->
+    <div v-else-if="curveType && hasResolvedParams" class="empty-hint">
+      估值日下未到期期权为空 —— 选中投组的期权均已到期，无需补全估值参数。可点击「计算」直接获取已实现损益（行权 + 权利金）。
+    </div>
     <div v-else-if="curveType" class="empty-hint">
       选择估值日期和参考曲线后，点击「获取参数」从曲线推导各交易的估值参数。
     </div>

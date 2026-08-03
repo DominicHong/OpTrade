@@ -53,6 +53,16 @@ export function useGreeksCalculation() {
   // Per-option-trade params (populated by resolve-params)
   const tradeParams = ref<EditableOptionTradeParams[]>([])
 
+  // True after a successful resolve-params call — even when the response
+  // is empty (all options have expired as of the valuation date, so the
+  // backend filter legitimately excludes every trade). Used by
+  // validateTradeParams to distinguish "user hasn't clicked 获取参数 yet"
+  // from "user clicked it and the trade table is empty because everything
+  // is expired and needs no params". In the latter case, calculation is
+  // allowed to proceed: the backend still computes realised P&L for the
+  // expired trades via curve resolution.
+  const hasResolvedParams = ref(false)
+
   // Results
   const result = ref<PortfolioGreeksResponse | null>(null)
   const aggregatedResult = ref<AggregatedAnalysisResponse | null>(null)
@@ -67,6 +77,7 @@ export function useGreeksCalculation() {
 
   function resetTradeParams() {
     tradeParams.value = []
+    hasResolvedParams.value = false
   }
 
   /**
@@ -74,10 +85,18 @@ export function useGreeksCalculation() {
    * (rfRateBase, rfRateQuote, spot, volatility) filled in — either from
    * curve resolution or by the user. Returns an error message string when
    * validation fails, or null when OK.
+   *
+   * An empty ``tradeParams`` is allowed whenever resolve-params has been
+   * run successfully — the backend filter excludes expired options (which
+   * need no market-data params); their realised P&L is still computed via
+   * the curve in the aggregate path.
    */
   function validateTradeParams(): string | null {
     if (tradeParams.value.length === 0) {
-      return '请先点击「获取参数」获取各交易的估值参数，确认或补齐后再计算。'
+      if (!hasResolvedParams.value) {
+        return '请先点击「获取参数」获取各交易的估值参数，确认或补齐后再计算。'
+      }
+      return null
     }
     const incomplete = tradeParams.value.filter(
       (tp) =>
@@ -129,9 +148,10 @@ export function useGreeksCalculation() {
           volatilityEdited: false,
         }),
       )
+      hasResolvedParams.value = true
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : '参数解析失败'
-      tradeParams.value = []
+      resetTradeParams()
     } finally {
       resolving.value = false
     }
@@ -246,6 +266,7 @@ export function useGreeksCalculation() {
     curveType,
     selectedPortfolioIds,
     tradeParams,
+    hasResolvedParams,
     result,
     aggregatedResult,
     loading,

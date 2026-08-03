@@ -18,6 +18,7 @@ const {
   startDate,
   curveType,
   tradeParams,
+  hasResolvedParams,
   result,
   aggregatedResult,
   loading,
@@ -100,9 +101,17 @@ async function onResolveParams() {
       allTrades.push(...mapped)
     }
     tradeParams.value = allTrades
+    // Mark resolve as completed even when allTrades is empty: the backend
+    // filter excludes expired options (which need no market-data params),
+    // so an empty table means "everything is already expired by the
+    // valuation date", not "user forgot to click 获取参数". Calculation is
+    // then allowed to proceed — the aggregate endpoint still computes
+    // realised P&L (exercise + premium) for those expired trades via the
+    // curve.
+    hasResolvedParams.value = true
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '参数解析失败'
-    tradeParams.value = []
+    resetTradeParams()
   } finally {
     resolving.value = false
   }
@@ -138,6 +147,7 @@ async function onCalculate() {
         :start-date="startDate"
         :curve-type="curveType"
         :trade-params="tradeParams"
+        :has-resolved-params="hasResolvedParams"
         :curve-definitions="curveStore.definitions"
         :loading="loading"
         :resolving="resolving"
