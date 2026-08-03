@@ -76,10 +76,10 @@ Once running, visit http://127.0.0.1:8000/docs for interactive API docs (Swagger
 ```
 backend/         — FastAPI backend
   app/
-    models/      — SQLModel entities (core.py: OptionTrade, Portfolio, Counterparty, SpotTrade, barrier/asian details)
+    models/      — SQLModel entities (core.py: OptionTrade, SpotTrade, SwapTrade, Portfolio, Counterparty, barrier/asian details)
     schemas/     — Pydantic request/response schemas
     routers/     — REST API endpoints (all mounted under /api/v1/*)
-    services/    — Business logic (pricing, Greeks, import, curves) — only place QuantLib is used
+    services/    — Business logic (pricing, Greeks, scenario analysis, import, curves) — only place QuantLib is used
     utils/       — Helpers (column_mapping, date_utils, quantlib_helpers, excel_parser)
     desktop/     — PyWebView window launcher
   tests/         — pytest tests (conftest.py provides engine/session/client fixtures)
@@ -87,7 +87,7 @@ backend/         — FastAPI backend
 frontend/        — Vue3 SPA (no PyWebView dependency)
   src/
     api/         — Axios API wrappers
-    pages/       — Page components (Dashboard, OptionTradeList, OptionTradeDetail, Portfolio, CurveManagement, ExchangeRateManagement)
+    pages/       — Page components (Dashboard, OptionTradeList, OptionTradeDetail, PortfolioManagement, PortfolioAnalysis, ScenarioAnalysis, CurveManagement, ExchangeRateManagement)
     components/  — Reusable components (layout, shared, trade, risk, portfolio)
     stores/      — Pinia stores
     router/      — Vue Router config (hash mode for PyWebView compat)
@@ -96,11 +96,13 @@ frontend/        — Vue3 SPA (no PyWebView dependency)
 
 ## Features
 
-- **Trade Management**: View, search, filter, and edit FX option trades
-- **Excel Import**: COMSTAR CSV/Excel trade export pipeline with validation (Chinese column headers mapped via `utils/column_mapping.py`)
+- **Trade Management**: View, search, filter, and edit FX option, spot, and swap trades (expired options supported)
+- **Excel Import**: COMSTAR CSV/Excel trade export pipeline for option/spot/swap trades with validation (Chinese column headers mapped via `utils/column_mapping.py`)
 - **Greeks Calculation**: Delta, Gamma, Vega, Theta, Rho via QuantLib
-- **Portfolio Analytics**: Aggregated risk metrics by portfolio
+- **Portfolio Analytics**: Aggregated risk metrics and P&L by portfolio
+- **Scenario Analysis**: Builtin market-movement scenarios and one-variable sweeps with per-pair spot/FX overrides (see `doc/option_rules.md` for the shock-scoping algorithm)
 - **Curve Management**: FX implied rate curves from chinamoney.com.cn (auto-crawl via Playwright or manual XLSX upload)
+- **Exchange Rate Management**: Multi-source spot rates for multi-currency P&L (manual entry, CSV import, or derivation from the FX implied curve)
 - **Dashboard**: Summary statistics, exposure breakdown
 
 ## Coding Constraints
@@ -117,7 +119,7 @@ Settings are loaded via `pydantic_settings.BaseSettings` with env prefix `OPTRAD
 | Env var | Purpose |
 | --- | --- |
 | `OPTRADE_DEBUG` | Enable SQL echo / debug mode |
-| `OPTRADE_FRONTEND_URL` | Override the URL PyWebView loads |
+| `OPTRADE_FRONTEND_DEV_URL` | Override the URL PyWebView loads in dev (default `http://localhost:3000`) |
 | `OPTRADE_DATABASE_URL` | Override the SQLite DB URL (default `data/optrade.db`) |
 | `OPTRADE_HOST` / `OPTRADE_PORT` | Backend bind address (default `127.0.0.1:8000`) |
 
