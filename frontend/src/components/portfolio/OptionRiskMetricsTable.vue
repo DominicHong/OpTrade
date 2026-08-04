@@ -57,10 +57,10 @@ const summary = computed(() => {
           <th>估值损益 (CNY, 万)</th>
           <th>行权损益 (CNY, 万)</th>
           <th>期权总损益 (CNY, 万)</th>
-          <th title="原币 (ccy2/1ccy1) 单位，未折算 CNY">Delta (原币)</th>
-          <th title="原币 (ccy2/1ccy1) 单位，未折算 CNY">Gamma (原币)</th>
-          <th title="原币，每日 Theta (theta×notional，ccy2/天)，未折算 CNY">Theta (原币)</th>
-          <th title="原币，Vega (vega×notional，每 1% 波动率变化，ccy2/1%vol)，未折算 CNY">Vega (原币)</th>
+          <th title="原币 (ccy2/1ccy1) 单位，未折算 CNY，单位万">Delta (原币, 万)</th>
+          <th title="原币 (ccy2/1ccy1) 单位，未折算 CNY，单位万">Gamma (原币, 万)</th>
+          <th title="原币，每日 Theta (theta×notional，ccy2/天)，未折算 CNY，单位万">Theta (原币, 万)</th>
+          <th title="原币，Vega (vega×notional，每 1% 波动率变化，ccy2/1%vol)，未折算 CNY，单位万">Vega (原币, 万)</th>
         </tr>
       </thead>
       <tbody>
@@ -77,10 +77,10 @@ const summary = computed(() => {
           <td :class="profitColor(m.total_option_pnl_cny)">
             {{ fmt(toWan(m.total_option_pnl_cny)) }}
           </td>
-          <td>{{ fmt(m.delta) }}</td>
-          <td>{{ fmt(m.gamma) }}</td>
-          <td>{{ fmt(m.theta) }}</td>
-          <td>{{ fmt(m.vega) }}</td>
+          <td>{{ fmt(toWan(m.delta)) }}</td>
+          <td>{{ fmt(toWan(m.gamma)) }}</td>
+          <td>{{ fmt(toWan(m.theta)) }}</td>
+          <td>{{ fmt(toWan(m.vega)) }}</td>
         </tr>
         <!-- Summary row -->
         <tr class="summary-row">

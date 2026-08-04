@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import {
   analyzeScenario,
   analyzeBuiltinScenarios,
@@ -41,6 +41,52 @@ export function useScenarioAnalysis() {
   const sweepResult = ref<ScenarioSweepResponse | null>(null)
   const sweepLoading = ref(false)
 
+  // Auto-generate the sweep min/max from the pair's initial values when the
+  // user picks a different pair or variable. Display units: spot raw,
+  // volatility / rates as percent (5.0 = 5%). Converted back to decimals
+  // (0.05 = 5%) in runSweep, which matches the backend override schema.
+  function applyDefaultSweepRange() {
+    const p = sweepPair.value ? pairParams.value[sweepPair.value] : null
+    if (!p) return
+
+    let min: number | null = null
+    let max: number | null = null
+    const round6 = (v: number): number => Math.round(v * 1e6) / 1e6
+    const round2 = (v: number): number => Math.round(v * 100) / 100
+    switch (sweepVariable.value) {
+      case 'spot':
+        if (p.defaultSpot != null) {
+          min = round6(p.defaultSpot * 0.995)
+          max = round6(p.defaultSpot * 1.005)
+        }
+        break
+      case 'volatility':
+        if (p.defaultVol != null) {
+          min = round2(p.defaultVol * 100 - 5)
+          max = round2(p.defaultVol * 100 + 5)
+        }
+        break
+      case 'rf_rate_base':
+        if (p.defaultRfBase != null) {
+          min = round2(p.defaultRfBase * 100 - 1)
+          max = round2(p.defaultRfBase * 100 + 1)
+        }
+        break
+      case 'rf_rate_quote':
+        if (p.defaultRfQuote != null) {
+          min = round2(p.defaultRfQuote * 100 - 1)
+          max = round2(p.defaultRfQuote * 100 + 1)
+        }
+        break
+    }
+    if (min != null && max != null) {
+      sweepMin.value = min
+      sweepMax.value = max
+    }
+  }
+
+  watch([sweepPair, sweepVariable], applyDefaultSweepRange)
+
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function resetResults() {
@@ -75,6 +121,7 @@ export function useScenarioAnalysis() {
 
     await loadRequiredPairs()
     await loadDefaultParams()
+    applyDefaultSweepRange()
     initialized.value = true
   }
 
@@ -242,8 +289,8 @@ export function useScenarioAnalysis() {
         curve_type: curveType.value,
         ccy_pair: sweepPair.value,
         variable: sweepVariable.value,
-        min_value: sweepMin.value,
-        max_value: sweepMax.value,
+        min_value: sweepVariable.value === 'spot' ? sweepMin.value : sweepMin.value / 100,
+        max_value: sweepVariable.value === 'spot' ? sweepMax.value : sweepMax.value / 100,
         num_steps: sweepSteps.value,
       })
       sweepResult.value = response

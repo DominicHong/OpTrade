@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import { SWEEP_VARIABLE_LABELS } from '@/types/scenario'
 
 const props = defineProps<{
@@ -21,6 +21,15 @@ const emit = defineEmits<{
   'update:modelSteps': [value: number]
   run: []
 }>()
+
+// Volatility / base / quote rates are displayed in percent with 2 decimals.
+const isRate = computed(() => props.modelVariable !== 'spot')
+const displayMin = computed(() =>
+  isRate.value ? props.modelMin.toFixed(2) : String(props.modelMin),
+)
+const displayMax = computed(() =>
+  isRate.value ? props.modelMax.toFixed(2) : String(props.modelMax),
+)
 
 watch(() => props.pairs, (pairs) => {
   if (!props.modelPair && pairs.length > 0) {
@@ -70,23 +79,29 @@ watch(() => props.pairs, (pairs) => {
       <div class="param-row">
         <div class="param-field">
           <label for="sweep-min">最小值</label>
-          <input
-            id="sweep-min"
-            type="number"
-            :value="modelMin"
-            step="any"
-            @input="emit('update:modelMin', parseFloat(($event.target as HTMLInputElement).value) || 0)"
-          />
+          <div class="input-wrap">
+            <input
+              id="sweep-min"
+              type="number"
+              :value="displayMin"
+              step="any"
+              @input="emit('update:modelMin', parseFloat(($event.target as HTMLInputElement).value) || 0)"
+            />
+            <span v-if="isRate" class="unit-suffix">%</span>
+          </div>
         </div>
         <div class="param-field">
           <label for="sweep-max">最大值</label>
-          <input
-            id="sweep-max"
-            type="number"
-            :value="modelMax"
-            step="any"
-            @input="emit('update:modelMax', parseFloat(($event.target as HTMLInputElement).value) || 0)"
-          />
+          <div class="input-wrap">
+            <input
+              id="sweep-max"
+              type="number"
+              :value="displayMax"
+              step="any"
+              @input="emit('update:modelMax', parseFloat(($event.target as HTMLInputElement).value) || 0)"
+            />
+            <span v-if="isRate" class="unit-suffix">%</span>
+          </div>
         </div>
         <div class="param-field">
           <label for="sweep-steps">步数</label>
@@ -169,6 +184,22 @@ watch(() => props.pairs, (pairs) => {
   background: var(--color-bg);
   color: var(--color-text);
   transition: border-color var(--transition-fast);
+}
+.input-wrap {
+  position: relative;
+}
+.input-wrap input {
+  width: 100%;
+  padding-right: 1.4rem;
+}
+.unit-suffix {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  pointer-events: none;
 }
 .param-field input:focus,
 .param-field select:focus {

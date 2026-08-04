@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import type { ScenarioSweepResponse, SweepStepResult } from '@/types/scenario'
 import type { CcyPairOptionMetrics } from '@/types/portfolio'
 import { SWEEP_VARIABLE_LABELS } from '@/types/scenario'
+import { fmt, toWan } from '@/utils/format'
 
 const props = defineProps<{
   result: ScenarioSweepResponse
@@ -70,6 +71,7 @@ function makeGreekOption(
   return {
     tooltip: {
       trigger: 'axis' as const,
+      valueFormatter: (v: unknown) => fmt(toWan(typeof v === 'number' ? v : null)) + ' 万',
     },
     legend: {
       data: series.map((s) => s.name as string),
@@ -84,8 +86,11 @@ function makeGreekOption(
     },
     yAxis: {
       type: 'value' as const,
-      name: greekLabels[key],
+      name: greekLabels[key] + ' (万)',
       nameTextStyle: { fontSize: 10 },
+      axisLabel: {
+        formatter: (v: number) => fmt(toWan(v), 2) + 'W',
+      },
       splitLine: { lineStyle: { type: 'dashed' as const } },
     },
     series,
