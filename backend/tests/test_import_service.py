@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.models import ImportLog, OptionTrade
 from app.services.import_service import ImportService
 
 
@@ -68,3 +69,83 @@ class TestValidate:
         )
         validated = svc.validate(parsed)
         assert validated.error_count > 0
+
+
+class TestUpdateExistingTrade:
+    """Re-imports may refresh OptionTrade.exercise_derivative_trade_id."""
+
+    def _seed_option(self, session, trade_id="6.2.9999001", derivative_id=None):
+        trade = OptionTrade(
+            trade_id=trade_id,
+            ccy_pair="USD/CNY",
+            trade_type="CALL",
+            direction="买入",
+            strike=7.12,
+            option_category="fx_vanilla",
+            exercise_derivative_trade_id=derivative_id,
+        )
+        session.add(trade)
+        session.commit()
+        return trade
+
+    def _run_import(self, svc, session, row_data):
+        log = ImportLog(filename="test.csv", file_hash="abc", total_rows=1)
+        svc.execute_import(
+            None,
+            type("V", (), {"valid_rows": [row_data], "error_count": 0})(),
+            log,
+            session,
+        )
+        session.refresh(log)
+        return log
+
+    def _load(self, session, trade_id="6.2.9999001"):
+        from sqlmodel import select
+
+        return session.exec(select(OptionTrade).where(OptionTrade.trade_id == trade_id)).first()
+
+    def test_new_value_is_imported(self, svc, session):
+        """A fresh exercise_derivative_trade_id should be written to the DB."""
+        self._seed_option(session)
+        log = self._run_import(svc, session, {
+            "trade_id": "6.2.9999001",
+            "exercise_derivative_trade_id": "6.6.0200564",
+        })
+
+        assert self._load(session).exercise_derivative_trade_id == "6.6.0200564"
+        assert log.imported_rows == 1
+        assert log.skipped_rows == 0
+
+    def test_changed_value_is_updated(self, svc, session):
+        """A different value replaces the previously stored one."""
+        self._seed_option(session, derivative_id="6.6.0200535")
+        log = self._run_import(svc, session, {
+            "trade_id": "6.2.9999001",
+            "exercise_derivative_trade_id": "6.6.0200564",
+        })
+
+        assert self._load(session).exercise_derivative_trade_id == "6.6.0200564"
+        assert log.imported_rows == 1
+
+    def test_same_value_is_skipped(self, svc, session):
+        """No change: the row is treated as a duplicate and skipped."""
+        self._seed_option(session, derivative_id="6.6.0200564")
+        log = self._run_import(svc, session, {
+            "trade_id": "6.2.9999001",
+            "exercise_derivative_trade_id": "6.6.0200564",
+        })
+
+        assert self._load(session).exercise_derivative_trade_id == "6.6.0200564"
+        assert log.imported_rows == 0
+        assert log.skipped_rows == 1
+
+    def test_blank_value_does_not_clear(self, svc, session):
+        """An empty file value must not wipe the stored id."""
+        self._seed_option(session, derivative_id="6.6.0200564")
+        log = self._run_import(svc, session, {
+            "trade_id": "6.2.9999001",
+        })
+
+        assert self._load(session).exercise_derivative_trade_id == "6.6.0200564"
+        assert log.imported_rows == 0
+        assert log.skipped_rows == 1

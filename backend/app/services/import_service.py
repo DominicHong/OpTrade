@@ -46,6 +46,17 @@ class ImportService(BaseImportService):
             return value / 100.0
         return value
 
+    def _update_existing_trade(self, existing, row_data: dict) -> bool:
+        # Re-imports of COMSTAR option flow files may fill in the
+        # exercise-derived spot trade id (行权衍生交易的成交编号) after the
+        # initial import.  Refresh it so the derivative spot can be matched
+        # in portfolio analysis.  Only non-empty file values are written.
+        new_value = row_data.get("exercise_derivative_trade_id")
+        if new_value and new_value != existing.exercise_derivative_trade_id:
+            existing.exercise_derivative_trade_id = new_value
+            return True
+        return False
+
     def _determine_option_category(self, row_data: dict) -> str:
         """Determine option_category from row data based on populated fields.
 

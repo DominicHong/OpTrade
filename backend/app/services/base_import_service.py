@@ -165,7 +165,11 @@ class BaseImportService:
                         )
                     ).first()
                     if existing:
-                        skipped += 1
+                        updated = self._update_existing_trade(existing, row_data)
+                        if updated:
+                            imported += 1
+                        else:
+                            skipped += 1
                         continue
 
                 self._create_trade(row_data, session)
@@ -204,6 +208,16 @@ class BaseImportService:
             if hasattr(self.trade_model, field_name):
                 setattr(trade, field_name, value)
         session.add(trade)
+
+    def _update_existing_trade(self, existing, row_data: dict) -> bool:
+        """Refresh an already-imported trade from a re-imported row.
+
+        The base implementation leaves existing rows untouched (skipped as
+        duplicates).  Subclasses may overwrite fields that the source file
+        keeps refreshing (e.g. the option exercise-derived trade id) and
+        return True when the DB row was changed.
+        """
+        return False
 
     # --- Shared helpers -----------------------------------------------------
 

@@ -89,7 +89,7 @@ function makeGreekOption(
       name: greekLabels[key] + ' (万)',
       nameTextStyle: { fontSize: 10 },
       axisLabel: {
-        formatter: (v: number) => fmt(toWan(v), 2) + 'W',
+        formatter: (v: number) => fmt(toWan(v), 2),
       },
       splitLine: { lineStyle: { type: 'dashed' as const } },
     },
@@ -101,8 +101,8 @@ function makeGreekOption(
 
 const pnlMetrics = ['total_option_pnl_cny', 'total_spot_pnl_cny', 'total_swap_pnl_cny', 'total_pnl_cny'] as const
 const pnlLabels: Record<string, string> = {
-  total_option_pnl_cny: '期权总损益 (CNY)', total_spot_pnl_cny: '即期总损益 (CNY)',
-  total_swap_pnl_cny: '掉期总损益 (CNY)', total_pnl_cny: '总损益 (CNY)',
+  total_option_pnl_cny: '期权总损益', total_spot_pnl_cny: '即期总损益',
+  total_swap_pnl_cny: '掉期总损益', total_pnl_cny: '总损益',
 }
 
 const pnlChartRefs = ref<Record<string, HTMLDivElement | null>>({})
@@ -116,11 +116,7 @@ function makePnlOption(
   return {
     tooltip: {
       trigger: 'axis' as const,
-      valueFormatter: (v: unknown) => {
-        const n = typeof v === 'number' ? v : 0
-        const abs = Math.abs(n)
-        return abs >= 1e4 ? (n / 1e4).toFixed(2) + ' 万' : n.toFixed(2)
-      },
+      valueFormatter: (v: unknown) => fmt(toWan(typeof v === 'number' ? v : null)) + ' 万',
     },
     grid: { left: 70, right: 20, top: 10, bottom: 30 },
     xAxis: {
@@ -133,7 +129,7 @@ function makePnlOption(
       name: 'CNY',
       nameTextStyle: { fontSize: 10 },
       axisLabel: {
-        formatter: (v: number) => (v / 1e4).toFixed(0) + 'W',
+        formatter: (v: number) => fmt(toWan(v), 2),
       },
       splitLine: { lineStyle: { type: 'dashed' as const } },
     },
@@ -194,11 +190,7 @@ function makeOptionPnlOption(results: SweepStepResult[]): echarts.EChartsOption 
   return {
     tooltip: {
       trigger: 'axis' as const,
-      valueFormatter: (v: unknown) => {
-        const n = typeof v === 'number' ? v : 0
-        const abs = Math.abs(n)
-        return abs >= 1e4 ? (n / 1e4).toFixed(2) + ' 万' : n.toFixed(2)
-      },
+      valueFormatter: (v: unknown) => fmt(toWan(typeof v === 'number' ? v : null)) + ' 万',
     },
     legend: {
       data: pairs, top: 0, textStyle: { fontSize: 10 },
@@ -213,7 +205,7 @@ function makeOptionPnlOption(results: SweepStepResult[]): echarts.EChartsOption 
       type: 'value' as const,
       name: 'CNY',
       nameTextStyle: { fontSize: 10 },
-      axisLabel: { formatter: (v: number) => (v / 1e4).toFixed(0) + 'W' },
+      axisLabel: { formatter: (v: number) => fmt(toWan(v), 2) },
       splitLine: { lineStyle: { type: 'dashed' as const } },
     },
     series,
@@ -385,6 +377,7 @@ watch(() => props.result, () => {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  text-align: center;
 }
 .chart-canvas {
   width: 100%;
