@@ -16,6 +16,7 @@ const columns: SortColumn[] = [
   { key: 'is_derivative', label: '类型', sortable: true, type: 'string' },
   { key: 'deal_price', label: '成交价', sortable: true, type: 'number' },
   { key: 'notional', label: 'Notional(万)', sortable: true, type: 'number' },
+  { key: 'delta', label: 'Delta(原币,万)', sortable: true, type: 'number' },
   { key: 'trade_date', label: '交易日', sortable: true, type: 'date' },
   { key: 'settlement_date', label: '清算日', sortable: true, type: 'date' },
   { key: 'market_rate', label: '市场汇率', sortable: true, type: 'number' },
@@ -74,6 +75,7 @@ function onSort(key: string) {
             </td>
             <td>{{ fmt(t.deal_price) }}</td>
             <td>{{ fmt(toWan(t.notional), 2) }}</td>
+            <td>{{ t.delta != null ? fmt(toWan(t.delta), 2) : '—' }}</td>
             <td>{{ fmtDate(t.trade_date) }}</td>
             <td>{{ fmtDate(t.settlement_date) }}</td>
             <td>{{ fmt(t.market_rate) }}</td>
@@ -83,7 +85,7 @@ function onSort(key: string) {
             <td :class="profitColor(t.pnl_cny)">{{ t.error ? '—' : fmt(toWan(t.pnl_cny), 2) }}</td>
           </tr>
           <tr v-for="t in pagedTrades" :key="'spterr-' + t.trade_id" class="error-row-detail" v-show="t.error">
-            <td :colspan="13" class="error-inline">{{ t.error }}</td>
+            <td :colspan="14" class="error-inline">{{ t.error }}</td>
           </tr>
         </tbody>
       </table>

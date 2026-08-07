@@ -16,7 +16,12 @@ const variableLabel = computed(() => SWEEP_VARIABLE_LABELS[props.result.variable
 
 const greekMetrics = ['delta', 'gamma', 'theta', 'vega'] as const
 const greekLabels: Record<string, string> = {
-  delta: 'Delta', gamma: 'Gamma', theta: 'Theta (per day)', vega: 'Vega (per 1% vol)',
+  delta: '总Delta', gamma: 'Gamma', theta: 'Theta (per day)', vega: 'Vega (per 1% vol)',
+}
+
+// Delta series plot the portfolio-level total delta (option + spot) per pair.
+function metricValue(m: CcyPairOptionMetrics, key: 'delta' | 'gamma' | 'theta' | 'vega'): number {
+  return key === 'delta' ? (m.total_delta ?? 0) : (m[key] ?? 0)
 }
 
 const greekChartRefs = ref<Record<string, HTMLDivElement | null>>({})
@@ -29,7 +34,7 @@ function buildPairLines(
   const allPairs = new Set<string>()
   for (const r of results) {
     for (const m of r.summary.option_metrics_by_ccy_pair) {
-      if (Math.abs(m[key] ?? 0) > 1e-12) allPairs.add(m.ccy_pair)
+      if (Math.abs(metricValue(m, key)) > 1e-12) allPairs.add(m.ccy_pair)
     }
   }
   const pairs = Array.from(allPairs).sort()
@@ -39,7 +44,7 @@ function buildPairLines(
   for (const r of results) {
     const seen = new Set<string>()
     for (const m of r.summary.option_metrics_by_ccy_pair) {
-      pairMap[m.ccy_pair]?.push(m[key] ?? 0)
+      pairMap[m.ccy_pair]?.push(metricValue(m, key))
       seen.add(m.ccy_pair)
     }
     for (const p of pairs) {
@@ -126,7 +131,7 @@ function makePnlOption(
     },
     yAxis: {
       type: 'value' as const,
-      name: 'CNY',
+      name: 'CNY (万)',
       nameTextStyle: { fontSize: 10 },
       axisLabel: {
         formatter: (v: number) => fmt(toWan(v), 2),
@@ -203,7 +208,7 @@ function makeOptionPnlOption(results: SweepStepResult[]): echarts.EChartsOption 
     },
     yAxis: {
       type: 'value' as const,
-      name: 'CNY',
+      name: 'CNY (万)',
       nameTextStyle: { fontSize: 10 },
       axisLabel: { formatter: (v: number) => fmt(toWan(v), 2) },
       splitLine: { lineStyle: { type: 'dashed' as const } },

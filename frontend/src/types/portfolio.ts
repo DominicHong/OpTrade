@@ -136,6 +136,10 @@ export interface CcyPairOptionMetrics {
   gamma: number
   theta: number  // per-day, notional-weighted: ccy2 / 1 day (原币)
   vega: number   // per 1% vol, notional-weighted: ccy2 / 1% vol (原币)
+  // (c) Portfolio-level delta per pair (original ccy2 / 1 ccy1 units):
+  //     spot_delta = Σ signed ccy1_amount; total_delta = delta + spot_delta
+  spot_delta: number
+  total_delta: number
   // Transparency: FX rate used to convert ccy2 → CNY (1.0 if ccy2 == CNY)
   fx_rate_to_cny: number | null
   trade_count: number
@@ -191,6 +195,7 @@ export interface SpotTradeAnalysisDetail {
   market_rate: number | null
   adjusted_deal_price: number | null
   notional: number | null
+  delta: number | null  // spot delta in ccy2 / 1 ccy1 units = signed notional
   trade_date: string | null
   settlement_date: string | null
   pnl: number | null

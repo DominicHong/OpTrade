@@ -846,6 +846,10 @@ class PortfolioService:
         pnl = (market_rate - adjusted_deal) * trade.ccy1_amount
         detail.pnl = round(pnl, 2)
 
+        # Spot delta in ccy2 / 1 ccy1 units: a spot position's delta is 1 per
+        # unit of ccy1 held, so the (signed) delta equals ccy1_amount.
+        detail.delta = round(trade.ccy1_amount, 6)
+
         return detail
 
     def _process_swap_trade(
@@ -1328,6 +1332,14 @@ class PortfolioService:
                     detail.pnl_cny = round(detail.pnl * spot_fx, 2)
                     total_spot_pnl_cny += detail.pnl_cny
 
+            # Per-currency-pair spot delta aggregation (original ccy2/1ccy1
+            # units).  Pairs with only spot trades get a metrics entry too,
+            # so the per-pair total delta remains complete.
+            if detail.delta is not None and detail.error is None:
+                pair_metrics = _get_or_create_pair_metrics(trade.ccy_pair or "")
+                if pair_metrics is not None:
+                    pair_metrics.spot_delta += detail.delta
+
             spot_details.append(detail)
 
         # --- 6b. Process swap trades ---
@@ -1380,6 +1392,8 @@ class PortfolioService:
             pair_metrics.gamma = round(pair_metrics.gamma, 6)
             pair_metrics.theta = round(pair_metrics.theta, 6)
             pair_metrics.vega = round(pair_metrics.vega, 6)
+            pair_metrics.spot_delta = round(pair_metrics.spot_delta, 6)
+            pair_metrics.total_delta = round(pair_metrics.delta + pair_metrics.spot_delta, 6)
             pair_metrics.npv_cny = round(pair_metrics.npv_cny, 2)
             pair_metrics.premium_pnl_cny = round(pair_metrics.premium_pnl_cny, 2)
             pair_metrics.exercise_pnl_cny = round(pair_metrics.exercise_pnl_cny, 2)

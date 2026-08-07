@@ -632,6 +632,66 @@ class TestSpotTradePnl:
         expected = round(sum(t.pnl_cny for t in resp.spot_trades if t.pnl_cny), 2)
         assert resp.summary.total_spot_pnl_cny == pytest.approx(expected, abs=0.01)
 
+    def test_spot_detail_delta_equals_signed_notional(
+        self, service, session, spot_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Spot delta (ccy2/1ccy1 units) must equal the signed ccy1_amount."""
+        resp = _aggregate(service, session, [spot_portfolio.id])
+        assert len(resp.spot_trades) == 3
+        for sp in resp.spot_trades:
+            assert sp.error is None
+            assert sp.delta == pytest.approx(sp.notional, rel=1e-6)
+            assert sp.delta == pytest.approx(sp.delta, rel=1e-6)
+        by_pair = {t.ccy_pair: t for t in resp.spot_trades}
+        # long USD/CNY and USD/HKD positive, short EUR/USD negative
+        assert by_pair["USD/CNY"].delta > 0
+        assert by_pair["USD/HKD"].delta > 0
+        assert by_pair["EUR/USD"].delta < 0
+
+    def test_spot_only_pairs_appear_with_total_delta(
+        self, service, session, spot_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """Pairs with only spot trades must still appear in the per-pair
+        metrics with spot_delta filled and total_delta == spot_delta."""
+        resp = _aggregate(service, session, [spot_portfolio.id])
+        metrics = {m.ccy_pair: m for m in resp.summary.option_metrics_by_ccy_pair}
+        assert set(metrics) == {"USD/CNY", "EUR/USD", "USD/HKD"}
+        for pair in ("USD/CNY", "EUR/USD", "USD/HKD"):
+            m = metrics[pair]
+            spot_trades = [t for t in resp.spot_trades if t.ccy_pair == pair]
+            expected_spot = sum(t.delta for t in spot_trades)
+            assert m.delta == 0.0
+            assert m.spot_delta == pytest.approx(expected_spot, rel=1e-6)
+            assert m.total_delta == pytest.approx(expected_spot, rel=1e-6)
+
+    def test_pair_total_delta_combines_option_and_spot(
+        self, service, session, multi_ccy_portfolio, spot_portfolio,
+        fx_curve_data, exchange_rate_data,
+    ):
+        """With options + spots in the same pair, total_delta must be the
+        option delta (Σ delta × notional) plus the signed spot notional."""
+        resp = _aggregate(
+            service, session, [multi_ccy_portfolio.id, spot_portfolio.id],
+        )
+        metrics = {m.ccy_pair: m for m in resp.summary.option_metrics_by_ccy_pair}
+        spot_by_pair: dict[str, float] = {}
+        for t in resp.spot_trades:
+            spot_by_pair[t.ccy_pair] = spot_by_pair.get(t.ccy_pair, 0.0) + (t.delta or 0.0)
+
+        for pair, m in metrics.items():
+            option_delta = m.delta
+            spot_delta = spot_by_pair.get(pair, 0.0)
+            assert m.spot_delta == pytest.approx(spot_delta, rel=1e-6)
+            assert m.total_delta == pytest.approx(option_delta + spot_delta, rel=1e-6)
+
+        # USD/CNY: long call (delta > 0) + long spot (10M) → total > option delta
+        usd_cny = metrics["USD/CNY"]
+        assert usd_cny.delta > 0
+        assert usd_cny.spot_delta == pytest.approx(10_000_000.0, rel=1e-6)
+        assert usd_cny.total_delta > usd_cny.delta
+
 
 # ============================================================================
 # Total P&L composition

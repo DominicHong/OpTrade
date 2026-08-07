@@ -188,10 +188,16 @@ class CcyPairOptionMetrics(BaseModel):
     exercise_pnl_cny: float = 0.0      # 行权损益
     total_option_pnl_cny: float = 0.0  # 期权总损益
     # (b) Greeks in original currency
-    delta: float = 0.0
+    delta: float = 0.0        # option delta only (Σ delta_i × notional1_i)
     gamma: float = 0.0
     theta: float = 0.0  # per-day, notional-weighted: ccy2 / 1 day (原币)
     vega: float = 0.0   # per 1% vol, notional-weighted: ccy2 / 1% vol (原币)
+    # (c) Portfolio-level delta per pair (original ccy2 / 1 ccy1 units):
+    #     spot_delta = Σ signed ccy1_amount of spot trades (delta of a spot
+    #     position is 1 per unit of ccy1 held);
+    #     total_delta = delta + spot_delta.
+    spot_delta: float = 0.0
+    total_delta: float = 0.0
     # Transparency: the FX rate used to convert ccy2 → CNY (1.0 if ccy2 == CNY)
     fx_rate_to_cny: float | None = None
     # Trade count for context
@@ -260,6 +266,7 @@ class SpotTradeAnalysisDetail(BaseModel):
     market_rate: float | None = None
     adjusted_deal_price: float | None = None
     notional: float | None = None
+    delta: float | None = None  # spot delta in ccy2 / 1 ccy1 units = signed ccy1_amount (notional)
     trade_date: date | None = None
     settlement_date: date | None = None
     pnl: float | None = None
