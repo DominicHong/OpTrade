@@ -44,8 +44,15 @@ export async function fetchTenors(): Promise<string[]> {
   return data
 }
 
+/** Crawl trigger timeout: browser launch plus one or more export/parse
+ *  cycles can take several minutes (chinamoney limits exports to one month
+ *  per file, so long gaps need multiple downloads). */
+const CRAWL_TIMEOUT_MS = 600_000
+
 export async function triggerRefresh(): Promise<CrawlResult> {
-  const { data } = await apiClient.post('/curves/fx-implied-rates/refresh')
+  const { data } = await apiClient.post('/curves/fx-implied-rates/refresh', undefined, {
+    timeout: CRAWL_TIMEOUT_MS,
+  })
   return data
 }
 

@@ -6,6 +6,10 @@ Uses Playwright + MS Edge to automate the browser-based Excel export:
   3. Click "导出Excel" and capture the downloaded .xlsx
   4. Parse with openpyxl, filter to target parameters, upsert to DB
 
+Missing ranges longer than ~one month are split into multiple export
+windows — chinamoney rejects longer ranges with a "只提供一个月历史数据
+查询和下载" alert and never produces a download.
+
 Selector IDs verified against live page DOM on 2026-06-24.
 """
 
@@ -41,6 +45,11 @@ _TARGET_PARAMS = {
 
 # Number of past days to seed when the database table is empty.
 _INITIAL_SEED_DAYS = 90
+
+# Maximum inclusive date range accepted by one chinamoney export.  Longer
+# ranges trigger a "只提供一个月历史数据查询和下载" alert and no download.
+# Verified against the live site on 2026-10-08: 31 days works, 32 fails.
+_MAX_EXPORT_DAYS = 31
 
 # ---------------------------------------------------------------------------
 # XLSX column map (column index → internal dict key)
@@ -116,6 +125,9 @@ class ChinaMoneyCrawler:
     async def crawl_all_missing(self, session: Session) -> dict:
         """Detect gaps, crawl chinamoney, parse & upsert.
 
+        The missing range is split into windows of at most *_MAX_EXPORT_DAYS*
+        days because a single chinamoney export cannot exceed one month.
+
         Returns a dict compatible with ``CrawlResult``.
         """
         missing = self.determine_missing_dates(session)
@@ -129,17 +141,17 @@ class ChinaMoneyCrawler:
                 "error_message": None,
             }
 
+        chunks = _split_into_export_chunks(missing)
         logger.info(
-            "Missing date range: %s → %s (%d days)",
+            "Missing date range: %s → %s (%d days in %d export chunk(s))",
             missing[0],
             missing[-1],
             len(missing),
+            len(chunks),
         )
 
         try:
-            xlsx_bytes = await self._download_xlsx_via_browser(
-                missing[0], missing[-1],
-            )
+            xlsx_chunks = await self._download_chunks_via_browser(chunks)
         except Exception as exc:
             logger.error(
                 "Browser download failed: %s\n%s",
@@ -155,7 +167,9 @@ class ChinaMoneyCrawler:
             }
 
         try:
-            records = self.parse_xlsx(xlsx_bytes)
+            records: list[dict] = []
+            for xlsx_bytes in xlsx_chunks:
+                records.extend(self.parse_xlsx(xlsx_bytes))
         except Exception as exc:
             logger.error(
                 "XLSX parse failed: %s\n%s",
@@ -186,10 +200,13 @@ class ChinaMoneyCrawler:
 
     # ---- browser automation --------------------------------------------
 
-    async def _download_xlsx_via_browser(
-        self, date_from: date, date_to: date,
-    ) -> bytes:
-        """Automate the chinamoney Excel export with Playwright + Edge."""
+    async def _download_chunks_via_browser(
+        self, chunks: list[tuple[date, date]],
+    ) -> list[bytes]:
+        """Download one Excel export per chunk using a single browser session.
+
+        Returns one raw .xlsx byte stream per chunk, in the same order.
+        """
         pw_browser, pw_instance = await pw.launch_browser(headless=self._headless)
 
         try:
@@ -197,7 +214,28 @@ class ChinaMoneyCrawler:
             await pw.navigate_to_page(page)
             await pw.wait_for_page_ready(page)
 
-            # Fill form and query before export.
+            results: list[bytes] = []
+            for idx, (date_from, date_to) in enumerate(chunks, start=1):
+                logger.info(
+                    "Downloading export chunk %d/%d: %s → %s",
+                    idx,
+                    len(chunks),
+                    date_from,
+                    date_to,
+                )
+                results.append(
+                    await self._download_one_chunk(page, date_from, date_to)
+                )
+            return results
+
+        finally:
+            await pw_browser.close()
+            await pw_instance.stop()
+
+    @staticmethod
+    async def _download_one_chunk(page, date_from: date, date_to: date) -> bytes:
+        """Fill the query form, click export and capture one XLSX download."""
+        try:
             await pw.set_date_range(page, date_from, date_to)
             await pw.set_dropdowns(
                 page,
@@ -213,24 +251,25 @@ class ChinaMoneyCrawler:
                 await pw.click_export_button(page)
 
             download = await download_info.value
-            logger.info("Download captured: %s", download.suggested_filename)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Chinamoney export failed for {date_from} → {date_to}: {exc}"
+            ) from exc
 
-            with tempfile.NamedTemporaryFile(
-                suffix=".xlsx", delete=False,
-            ) as tmp:
-                tmp_path = Path(tmp.name)
-            try:
-                await download.save_as(str(tmp_path))
-                data = tmp_path.read_bytes()
-            finally:
-                tmp_path.unlink(missing_ok=True)
+        logger.info("Download captured: %s", download.suggested_filename)
 
-            logger.info("XLSX size: %d bytes", len(data))
-            return data
-
+        with tempfile.NamedTemporaryFile(
+            suffix=".xlsx", delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            await download.save_as(str(tmp_path))
+            data = tmp_path.read_bytes()
         finally:
-            await pw_browser.close()
-            await pw_instance.stop()
+            tmp_path.unlink(missing_ok=True)
+
+        logger.info("XLSX size: %d bytes", len(data))
+        return data
 
     # ---- XLSX parsing --------------------------------------------------
 
@@ -391,6 +430,19 @@ class ChinaMoneyCrawler:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _split_into_export_chunks(days: list[date]) -> list[tuple[date, date]]:
+    """Group consecutive dates into export windows of at most *_MAX_EXPORT_DAYS*.
+
+    ``days`` is expected to be a contiguous, ascending list of calendar days
+    (as returned by ``determine_missing_dates``).  Returns ``(date_from,
+    date_to)`` pairs ready to be passed to the export form.
+    """
+    return [
+        (days[i], days[min(i + _MAX_EXPORT_DAYS, len(days)) - 1])
+        for i in range(0, len(days), _MAX_EXPORT_DAYS)
+    ]
 
 
 def _extract_foreign_currency(ccy_pair: str) -> str:
